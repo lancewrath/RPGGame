@@ -1,0 +1,573 @@
+using UnityEngine;
+using UnityEditor;
+using UnityEditor.Experimental.GraphView;
+using UnityEngine.UIElements;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+
+namespace RPGGame.Map.Editor
+{
+    public class RPGMapGeneratorWindow : EditorWindow
+    {
+        private NoiseGraphView graphView;
+        private string currentGraphName = "default_heightmap";
+        private string currentMapName = "DefaultMap";
+        private VisualElement toolbar;
+        private NoiseNodePropertyInspector propertyInspector;
+        
+        [MenuItem("Window/RPG Map/Heightmap Graph Editor")]
+        public static void OpenWindow()
+        {
+            var window = GetWindow<RPGMapGeneratorWindow>();
+            window.titleContent = new GUIContent("Heightmap Graph Editor");
+            window.Show();
+        }
+        
+        public static void OpenWindowForMap(string mapName, string graphName)
+        {
+            var window = GetWindow<RPGMapGeneratorWindow>();
+            window.titleContent = new GUIContent($"Heightmap Graph Editor - {mapName}");
+            window.currentMapName = mapName;
+            window.currentGraphName = graphName;
+            window.LoadGraph();
+            window.Show();
+        }
+        
+        private void OnEnable()
+        {
+            GenerateToolbar();
+            rootVisualElement.Add(toolbar);
+            
+            // Create content container with horizontal layout (graph view + inspector)
+            var contentContainer = new VisualElement();
+            contentContainer.style.flexDirection = FlexDirection.Row;
+            contentContainer.style.flexGrow = 1;
+            rootVisualElement.Add(contentContainer);
+            
+            ConstructGraphView();
+            contentContainer.Add(graphView);
+            
+            GeneratePropertyInspector();
+            contentContainer.Add(propertyInspector);
+            
+            GenerateMiniMap();
+        }
+        
+        private void OnDisable()
+        {
+            // Cleanup is handled automatically by Unity
+        }
+        
+        private void ConstructGraphView()
+        {
+            graphView = new NoiseGraphView(this)
+            {
+                name = "Noise Graph View"
+            };
+            
+            graphView.OnNodeSelected = (node) => {
+                if (propertyInspector != null)
+                    propertyInspector.UpdateSelection(node);
+            };
+            
+            // Make graph view take up remaining space
+            graphView.style.flexGrow = 1;
+        }
+        
+        private void GeneratePropertyInspector()
+        {
+            propertyInspector = new NoiseNodePropertyInspector();
+            // Inspector has fixed width, positioned on the right
+            propertyInspector.style.flexShrink = 0;
+        }
+        
+        private void GenerateToolbar()
+        {
+            toolbar = new VisualElement();
+            toolbar.name = "toolbar";
+            toolbar.style.flexDirection = FlexDirection.Row;
+            toolbar.style.height = 30;
+            toolbar.style.paddingLeft = 5;
+            toolbar.style.paddingRight = 5;
+            toolbar.style.paddingTop = 3;
+            toolbar.style.paddingBottom = 3;
+            toolbar.style.backgroundColor = new Color(0.22f, 0.22f, 0.22f);
+            
+            var mapNameField = new TextField("Map Name:");
+            mapNameField.value = currentMapName;
+            mapNameField.style.width = 250;
+            mapNameField.style.marginRight = 5;
+            mapNameField.RegisterValueChangedCallback(evt => currentMapName = evt.newValue);
+            toolbar.Add(mapNameField);
+            
+            var graphNameField = new TextField("Graph Name:");
+            graphNameField.value = currentGraphName;
+            graphNameField.style.width = 250;
+            graphNameField.style.marginRight = 5;
+            graphNameField.RegisterValueChangedCallback(evt => currentGraphName = evt.newValue);
+            toolbar.Add(graphNameField);
+            
+            // Add spacer
+            var spacer = new VisualElement();
+            spacer.style.flexGrow = 1;
+            toolbar.Add(spacer);
+            
+            var loadButton = new Button(() => LoadGraph()) { text = "Load Graph" };
+            loadButton.style.marginRight = 5;
+            toolbar.Add(loadButton);
+            
+            var saveButton = new Button(() => SaveGraph()) { text = "Save Graph" };
+            toolbar.Add(saveButton);
+            
+            rootVisualElement.Add(toolbar);
+        }
+        
+        private void GenerateMiniMap()
+        {
+            var miniMap = new MiniMap { anchored = true };
+            miniMap.SetPosition(new Rect(10, 30, 200, 140));
+            graphView.Add(miniMap);
+        }
+        
+        private void SaveGraph()
+        {
+            if (string.IsNullOrEmpty(currentMapName) || string.IsNullOrEmpty(currentGraphName))
+            {
+                EditorUtility.DisplayDialog("Error", "Map name and Graph name must be specified.", "OK");
+                return;
+            }
+            
+            string worldFolder = Path.Combine(Application.streamingAssetsPath, "Worlds", currentMapName);
+            if (!Directory.Exists(worldFolder))
+            {
+                Directory.CreateDirectory(worldFolder);
+            }
+            
+            NoiseGraphData graphData = graphView.SerializeGraph();
+            string json = JsonUtility.ToJson(graphData, true);
+            string filePath = Path.Combine(worldFolder, $"{currentGraphName}.json");
+            
+            File.WriteAllText(filePath, json);
+            AssetDatabase.Refresh();
+            
+            EditorUtility.DisplayDialog("Success", $"Graph saved to:\n{filePath}", "OK");
+        }
+        
+        private void LoadGraph()
+        {
+            if (string.IsNullOrEmpty(currentMapName) || string.IsNullOrEmpty(currentGraphName))
+            {
+                EditorUtility.DisplayDialog("Error", "Map name and Graph name must be specified.", "OK");
+                return;
+            }
+            
+            string worldFolder = Path.Combine(Application.streamingAssetsPath, "Worlds", currentMapName);
+            string filePath = Path.Combine(worldFolder, $"{currentGraphName}.json");
+            
+            if (!File.Exists(filePath))
+            {
+                EditorUtility.DisplayDialog("Error", $"Graph file not found:\n{filePath}", "OK");
+                return;
+            }
+            
+            try
+            {
+                string json = File.ReadAllText(filePath);
+                NoiseGraphData graphData = JsonUtility.FromJson<NoiseGraphData>(json);
+                graphView.DeserializeGraph(graphData);
+                EditorUtility.DisplayDialog("Success", "Graph loaded successfully.", "OK");
+            }
+            catch (Exception e)
+            {
+                EditorUtility.DisplayDialog("Error", $"Failed to load graph:\n{e.Message}", "OK");
+            }
+        }
+    }
+    
+    public class NoiseGraphView : GraphView
+    {
+        private RPGMapGeneratorWindow window;
+        private NoiseGraphNode outputNode;
+        public Action<NoiseGraphNode> OnNodeSelected;
+        
+        public NoiseGraphView(RPGMapGeneratorWindow editorWindow)
+        {
+            window = editorWindow;
+            
+            AddManipulators();
+            AddGridBackground();
+            AddStyles();
+            
+            AddSearchWindow();
+        }
+        
+        public override void AddToSelection(ISelectable selectable)
+        {
+            base.AddToSelection(selectable);
+            UpdateSelection();
+        }
+        
+        public override void RemoveFromSelection(ISelectable selectable)
+        {
+            base.RemoveFromSelection(selectable);
+            UpdateSelection();
+        }
+        
+        public override void ClearSelection()
+        {
+            base.ClearSelection();
+            UpdateSelection();
+        }
+        
+        private void UpdateSelection()
+        {
+            NoiseGraphNode selectedNode = null;
+            var currentSelection = selection.ToList();
+            if (currentSelection.Count > 0 && currentSelection[0] is NoiseGraphNode node)
+            {
+                selectedNode = node;
+            }
+            OnNodeSelected?.Invoke(selectedNode);
+        }
+        
+        // Method to refresh previews when graph changes
+        public void RefreshNodePreviews()
+        {
+            foreach (var node in nodes.ToList().OfType<NoiseGraphNode>())
+            {
+                if (node.HasPreview)
+                {
+                    node.UpdatePreview();
+                }
+            }
+        }
+        
+        private void AddManipulators()
+        {
+            SetupZoom(ContentZoomer.DefaultMinScale, ContentZoomer.DefaultMaxScale);
+            this.AddManipulator(new ContentDragger());
+            this.AddManipulator(new SelectionDragger());
+            this.AddManipulator(new RectangleSelector());
+            this.AddManipulator(new FreehandSelector());
+        }
+        
+        private void AddGridBackground()
+        {
+            var grid = new GridBackground();
+            grid.StretchToParentSize();
+            Insert(0, grid);
+        }
+        
+        private void AddStyles()
+        {
+            var styleSheet = Resources.Load<StyleSheet>("NoiseGraphViewStyle");
+            if (styleSheet != null)
+            {
+                styleSheets.Add(styleSheet);
+            }
+        }
+        
+        private void AddSearchWindow()
+        {
+            nodeCreationRequest = context =>
+            {
+                var searchWindow = ScriptableObject.CreateInstance<NoiseNodeSearchWindow>();
+                searchWindow.Initialize(this);
+                // Pass the mouse position from the context
+                // context.screenMousePosition is in screen space
+                SearchWindow.Open(new SearchWindowContext(context.screenMousePosition), searchWindow);
+            };
+        }
+        
+        public override List<Port> GetCompatiblePorts(Port startPort, NodeAdapter nodeAdapter)
+        {
+            var compatiblePorts = new List<Port>();
+            
+            ports.ForEach(port =>
+            {
+                if (startPort != port && startPort.node != port.node && startPort.direction != port.direction)
+                {
+                    compatiblePorts.Add(port);
+                }
+            });
+            
+            return compatiblePorts;
+        }
+        
+        public NoiseGraphData SerializeGraph()
+        {
+            var graphData = new NoiseGraphData();
+            
+            // Serialize all nodes
+            foreach (var node in nodes.ToList().OfType<NoiseGraphNode>())
+            {
+                graphData.nodes.Add(node.Serialize());
+            }
+            
+            // Serialize all edges
+            foreach (var edge in edges.ToList())
+            {
+                if (edge.input.node is NoiseGraphNode inputNode && edge.output.node is NoiseGraphNode outputNodeData)
+                {
+                    graphData.edges.Add(new NoiseEdgeData
+                    {
+                        inputNodeGuid = inputNode.NodeGuid,
+                        inputPortIndex = inputNode.GetInputPortIndex(edge.input),
+                        outputNodeGuid = outputNodeData.NodeGuid,
+                        outputPortIndex = outputNodeData.GetOutputPortIndex(edge.output)
+                    });
+                }
+            }
+            
+            // Find output node (dedicated Output node, or node with no output connections, or first node if none)
+            var outputNode = nodes.ToList().OfType<NoiseOutputNode>().FirstOrDefault();
+            if (outputNode != null)
+            {
+                graphData.outputNodeGuid = outputNode.NodeGuid;
+            }
+            else
+            {
+                // Fallback: find node with no output connections
+                var nodesWithOutputs = nodes.ToList().OfType<NoiseGraphNode>()
+                    .Where(n => n.OutputPorts.Count > 0 && !edges.ToList().Any(e => e.output.node == n));
+                
+                if (nodesWithOutputs.Any())
+                {
+                    graphData.outputNodeGuid = nodesWithOutputs.First().NodeGuid;
+                }
+                else if (graphData.nodes.Count > 0)
+                {
+                    graphData.outputNodeGuid = graphData.nodes[0].guid;
+                }
+            }
+            
+            return graphData;
+        }
+        
+        public void DeserializeGraph(NoiseGraphData graphData)
+        {
+            // Clear existing graph
+            DeleteElements(graphElements.ToList());
+            
+            // Create nodes
+            Dictionary<string, NoiseGraphNode> nodeMap = new Dictionary<string, NoiseGraphNode>();
+            
+            foreach (var nodeData in graphData.nodes)
+            {
+                NoiseGraphNode node = CreateNodeFromType(nodeData.nodeType);
+                if (node != null)
+                {
+                    node.Deserialize(nodeData);
+                    node.InitializePreview(this);
+                    AddElement(node);
+                    nodeMap[nodeData.guid] = node;
+                }
+            }
+            
+            // Create edges
+            foreach (var edgeData in graphData.edges)
+            {
+                if (nodeMap.TryGetValue(edgeData.inputNodeGuid, out NoiseGraphNode inputNode) &&
+                    nodeMap.TryGetValue(edgeData.outputNodeGuid, out NoiseGraphNode outputNode))
+                {
+                    if (inputNode.InputPorts.Count > edgeData.inputPortIndex &&
+                        outputNode.OutputPorts.Count > edgeData.outputPortIndex)
+                    {
+                        var inputPort = inputNode.InputPorts[edgeData.inputPortIndex];
+                        var outputPort = outputNode.OutputPorts[edgeData.outputPortIndex];
+                        
+                        var edge = outputPort.ConnectTo(inputPort);
+                        AddElement(edge);
+                    }
+                }
+            }
+        }
+        
+        private NoiseGraphNode CreateNodeFromType(string nodeType)
+        {
+            switch (nodeType)
+            {
+                case "Perlin": return new PerlinNoiseNode();
+                case "Billow": return new BillowNoiseNode();
+                case "RidgedMultifractal": return new RidgedMultifractalNoiseNode();
+                case "Add": return new AddNode();
+                case "Multiply": return new MultiplyNode();
+                case "Subtract": return new SubtractNode();
+                case "Min": return new MinNode();
+                case "Max": return new MaxNode();
+                case "Blend": return new BlendNode();
+                case "Power": return new PowerNode();
+                case "Abs": return new AbsNode();
+                case "Invert": return new InvertNode();
+                case "Curve": return new CurveNode();
+                case "Output": return new NoiseOutputNode();
+                default: return null;
+            }
+        }
+    }
+    
+    public class NoiseNodeSearchWindow : ScriptableObject, ISearchWindowProvider
+    {
+        private NoiseGraphView graphView;
+        private Texture2D indentationIcon;
+        
+        public void Initialize(NoiseGraphView graphView)
+        {
+            this.graphView = graphView;
+            indentationIcon = new Texture2D(1, 1);
+            indentationIcon.SetPixel(0, 0, new Color(0, 0, 0, 0));
+            indentationIcon.Apply();
+        }
+        
+        public List<SearchTreeEntry> CreateSearchTree(SearchWindowContext context)
+        {
+            var tree = new List<SearchTreeEntry>
+            {
+                new SearchTreeGroupEntry(new GUIContent("Create Node"), 0),
+                new SearchTreeGroupEntry(new GUIContent("Generators"), 1),
+                new SearchTreeEntry(new GUIContent("Perlin Noise", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(PerlinNoiseNode)
+                },
+                new SearchTreeEntry(new GUIContent("Billow Noise", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(BillowNoiseNode)
+                },
+                new SearchTreeEntry(new GUIContent("Ridged Multifractal", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(RidgedMultifractalNoiseNode)
+                },
+                new SearchTreeGroupEntry(new GUIContent("Operators"), 1),
+                new SearchTreeEntry(new GUIContent("Add", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(AddNode)
+                },
+                new SearchTreeEntry(new GUIContent("Multiply", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(MultiplyNode)
+                },
+                new SearchTreeEntry(new GUIContent("Subtract", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(SubtractNode)
+                },
+                new SearchTreeEntry(new GUIContent("Min", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(MinNode)
+                },
+                new SearchTreeEntry(new GUIContent("Max", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(MaxNode)
+                },
+                new SearchTreeEntry(new GUIContent("Blend", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(BlendNode)
+                },
+                new SearchTreeEntry(new GUIContent("Power", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(PowerNode)
+                },
+                new SearchTreeEntry(new GUIContent("Absolute", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(AbsNode)
+                },
+                new SearchTreeEntry(new GUIContent("Invert", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(InvertNode)
+                },
+                new SearchTreeEntry(new GUIContent("Curve", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(CurveNode)
+                },
+                new SearchTreeGroupEntry(new GUIContent("Output"), 1),
+                new SearchTreeEntry(new GUIContent("Noise Output", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(NoiseOutputNode)
+                }
+            };
+            
+            return tree;
+        }
+        
+        public bool OnSelectEntry(SearchTreeEntry searchTreeEntry, SearchWindowContext context)
+        {
+            var window = EditorWindow.focusedWindow;
+            if (window == null) return false;
+            
+            // Convert screen position to graph view local coordinates
+            // Following Unity's ShaderGraph implementation exactly (SearchWindowProvider.cs line 396-397)
+            var windowRoot = window.rootVisualElement;
+            
+            // screenMousePosition - ShaderGraph uses it directly without subtracting window position
+            // This suggests it's already in the right coordinate space or ChangeCoordinatesTo handles it
+            Vector2 screenPos = context.screenMousePosition;
+            
+            // Convert to window root's parent coordinate space
+            // This matches ShaderGraph exactly: windowRoot.ChangeCoordinatesTo(windowRoot.parent, screenMousePosition)
+            Vector2 windowMousePosition = windowRoot.ChangeCoordinatesTo(windowRoot.parent, screenPos);
+            
+            // Convert to contentViewContainer local coordinates
+            // WorldToLocal automatically accounts for the view transform (zoom/pan)
+            // ShaderGraph uses: m_GraphView.contentViewContainer.WorldToLocal(windowMousePosition)
+            Vector2 graphLocalPos = graphView.contentViewContainer.WorldToLocal(windowMousePosition);
+            
+            NoiseGraphNode node = null;
+            Type nodeType = searchTreeEntry.userData as Type;
+            
+            if (nodeType == typeof(PerlinNoiseNode))
+                node = new PerlinNoiseNode();
+            else if (nodeType == typeof(BillowNoiseNode))
+                node = new BillowNoiseNode();
+            else if (nodeType == typeof(RidgedMultifractalNoiseNode))
+                node = new RidgedMultifractalNoiseNode();
+            else if (nodeType == typeof(AddNode))
+                node = new AddNode();
+            else if (nodeType == typeof(MultiplyNode))
+                node = new MultiplyNode();
+            else if (nodeType == typeof(SubtractNode))
+                node = new SubtractNode();
+            else if (nodeType == typeof(MinNode))
+                node = new MinNode();
+            else if (nodeType == typeof(MaxNode))
+                node = new MaxNode();
+            else if (nodeType == typeof(BlendNode))
+                node = new BlendNode();
+            else if (nodeType == typeof(PowerNode))
+                node = new PowerNode();
+            else if (nodeType == typeof(AbsNode))
+                node = new AbsNode();
+            else if (nodeType == typeof(InvertNode))
+                node = new InvertNode();
+            else if (nodeType == typeof(CurveNode))
+                node = new CurveNode();
+            else if (nodeType == typeof(NoiseOutputNode))
+                node = new NoiseOutputNode();
+            
+            if (node != null)
+            {
+                node.SetPosition(new Rect(graphLocalPos, Vector2.zero));
+                node.InitializePreview(graphView);
+                graphView.AddElement(node);
+                return true;
+            }
+            
+            return false;
+        }
+    }
+}
+

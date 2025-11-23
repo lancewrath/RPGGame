@@ -1,0 +1,83 @@
+{
+    "nodes": [
+        {
+            "guid": "fdf9adc44389930428512a22eec26931",
+            "nodeType": "Output",
+            "position": {
+                "x": 593.0,
+                "y": 47.0
+            },
+            "properties": []
+        },
+        {
+            "guid": "a3434181ae9d01842853faa8f62f0185",
+            "nodeType": "Perlin",
+            "position": {
+                "x": -190.0,
+                "y": 37.0
+            },
+            "properties": [
+                {
+                    "key": "frequency",
+                    "value": "0.01",
+                    "valueType": "double"
+                },
+                {
+                    "key": "lacunarity",
+                    "value": "2",
+                    "valueType": "double"
+                },
+                {
+                    "key": "persistence",
+                    "value": "0.5",
+                    "valueType": "double"
+                },
+                {
+                    "key": "octaveCount",
+                    "value": "6",
+                    "valueType": "int"
+                },
+                {
+                    "key": "seed",
+                    "value": "0",
+                    "valueType": "int"
+                },
+                {
+                    "key": "quality",
+                    "value": "Low",
+                    "valueType": "QualityMode"
+                }
+            ]
+        },
+        {
+            "guid": "93da422f786528c458ea92acd2fea874",
+            "nodeType": "Curve",
+            "position": {
+                "x": 178.0,
+                "y": 252.0
+            },
+            "properties": [
+                {
+                    "key": "curve",
+                    "value": "{\"keys\":[{\"time\":0.0,\"value\":-1.0,\"inTangent\":2.0303027629852297,\"outTangent\":2.0303027629852297},{\"time\":0.33000001311302187,\"value\":-0.33000001311302187,\"inTangent\":1.9857397079467774,\"outTangent\":1.9857397079467774},{\"time\":0.6700000166893005,\"value\":0.33000001311302187,\"inTangent\":1.9857397079467774,\"outTangent\":1.9857397079467774},{\"time\":1.0,\"value\":1.0,\"inTangent\":2.0303030014038088,\"outTangent\":2.0303030014038088}]}",
+                    "valueType": "AnimationCurve"
+                }
+            ]
+        }
+    ],
+    "edges": [
+        {
+            "inputNodeGuid": "93da422f786528c458ea92acd2fea874",
+            "inputPortIndex": 0,
+            "outputNodeGuid": "a3434181ae9d01842853faa8f62f0185",
+            "outputPortIndex": 0
+        },
+        {
+            "inputNodeGuid": "fdf9adc44389930428512a22eec26931",
+            "inputPortIndex": 0,
+            "outputNodeGuid": "93da422f786528c458ea92acd2fea874",
+            "outputPortIndex": 0
+        }
+    ],
+    "outputNodeGuid": "fdf9adc44389930428512a22eec26931"
+}
