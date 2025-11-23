@@ -57,6 +57,42 @@ namespace RPGGame.Map
             WeldTerrainEdges();
         }
         
+        public void RegenerateTerrain()
+        {
+            // If no terrain exists, generate it from scratch
+            if (terrainTiles.Count == 0)
+            {
+                GenerateTerrain();
+                return;
+            }
+            
+            // Reload heightmap graph (in case it changed)
+            LoadHeightmapGraph();
+            
+            // Regenerate heights for existing terrain tiles
+            int heightmapSize = heightmapResolution + 1;
+            
+            foreach (var kvp in terrainTiles)
+            {
+                Vector2Int tileCoord = kvp.Key;
+                GameObject tileObj = kvp.Value;
+                
+                if (tileObj == null) continue;
+                
+                Terrain terrain = tileObj.GetComponentInChildren<Terrain>();
+                if (terrain == null) continue;
+                
+                // Generate new heightmap
+                float[,] heights = GenerateHeightmap(tileCoord.x, tileCoord.y, heightmapSize);
+                
+                // Apply new heights
+                terrain.terrainData.SetHeights(0, 0, heights);
+            }
+            
+            // Re-weld edges to remove seams
+            WeldTerrainEdges();
+        }
+        
         private void WeldTerrainEdges()
         {
             // Unity terrain heightmaps are resolution+1 in size
@@ -294,5 +330,6 @@ namespace RPGGame.Map
         // Public getters for editor
         public string MapName => mapName;
         public string HeightmapGraphName => heightmapGraphName;
+        public int TerrainTileCount => terrainTiles.Count;
     }
 }

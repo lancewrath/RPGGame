@@ -151,6 +151,8 @@ namespace RPGGame.Map
                     return CreateBillow(nodeData);
                 case "RidgedMultifractal":
                     return CreateRidgedMultifractal(nodeData);
+                case "Const":
+                    return CreateConst(nodeData);
                 case "Add":
                     return new Add();
                 case "Multiply":
@@ -175,6 +177,8 @@ namespace RPGGame.Map
                     return new Abs();
                 case "Invert":
                     return new Invert();
+                case "Select":
+                    return CreateSelect(nodeData);
                 case "Curve":
                     return CreateCurve(nodeData);
                 default:
@@ -218,6 +222,13 @@ namespace RPGGame.Map
             return ridged;
         }
         
+        private static LibNoise.Generator.Const CreateConst(NoiseNodeData nodeData)
+        {
+            var constModule = new LibNoise.Generator.Const();
+            constModule.Value = GetPropertyDouble(nodeData, "value", 0.0);
+            return constModule;
+        }
+        
         private static Scale CreateScale(NoiseNodeData nodeData)
         {
             var scale = new Scale();
@@ -243,6 +254,15 @@ namespace RPGGame.Map
             return clamp;
         }
         
+        private static LibNoise.Operator.Select CreateSelect(NoiseNodeData nodeData)
+        {
+            var select = new LibNoise.Operator.Select();
+            select.Minimum = GetPropertyDouble(nodeData, "minimum", -1.0);
+            select.Maximum = GetPropertyDouble(nodeData, "maximum", 1.0);
+            select.FallOff = GetPropertyDouble(nodeData, "fallOff", 0.0);
+            return select;
+        }
+        
         private static LibNoise.Operator.Curve CreateCurve(NoiseNodeData nodeData)
         {
             var curveModule = new LibNoise.Operator.Curve();
@@ -257,11 +277,13 @@ namespace RPGGame.Map
                     if (serializedCurve != null && serializedCurve.keys != null && serializedCurve.keys.Count >= 4)
                     {
                         // Convert AnimationCurve keys to LibNoise control points
-                        // LibNoise uses KeyValuePair<double, double> where Key is input and Value is output
-                        // AnimationCurve: time (x) is input, value (y) is output
-                        // User mentioned t and value might be swapped, but looking at LibNoise code,
-                        // Key is the input value and Value is the output value
-                        // So we use key.time as input (Key) and key.value as output (Value)
+                        // LibNoise Curve.Add(inputValue, outputValue):
+                        //   - inputValue: the noise input value threshold
+                        //   - outputValue: the output value when that threshold is reached
+                        // AnimationCurve mapping:
+                        //   - time (X-axis) = input noise value threshold
+                        //   - value (Y-axis) = output value
+                        // So: key.time → inputValue, key.value → outputValue
                         foreach (var key in serializedCurve.keys)
                         {
                             curveModule.Add(key.time, key.value);
@@ -271,10 +293,11 @@ namespace RPGGame.Map
                     {
                         Debug.LogWarning("Curve node has less than 4 keys. Using default curve.");
                         // Add default curve points
-                        curveModule.Add(0.0, -1.0);
-                        curveModule.Add(0.33, -0.33);
-                        curveModule.Add(0.67, 0.33);
-                        curveModule.Add(1.0, 1.0);
+                        // inputValue (noise threshold) → outputValue (result)
+                        curveModule.Add(-1.0, -1.0);  // Low noise input → low output
+                        curveModule.Add(-0.33, -0.33);
+                        curveModule.Add(0.33, 0.33);
+                        curveModule.Add(1.0, 1.0);     // High noise input → high output
                     }
                 }
                 catch (System.Exception e)

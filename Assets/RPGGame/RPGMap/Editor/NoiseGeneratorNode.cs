@@ -139,5 +139,36 @@ namespace RPGGame.Map.Editor
             }
         }
     }
+    
+    public class ConstNoiseNode : NoiseGraphNode
+    {
+        public double value = 0.0;
+        
+        public ConstNoiseNode() : base("Const", "Constant")
+        {
+            CreateOutputPort("Output");
+            RefreshExpandedState();
+            RefreshPorts();
+        }
+        
+        protected override List<NoisePropertyData> GetSerializedProperties()
+        {
+            return new List<NoisePropertyData>
+            {
+                new NoisePropertyData { key = "value", value = value.ToString(), valueType = "double" }
+            };
+        }
+        
+        protected override void DeserializeProperties(List<NoisePropertyData> properties)
+        {
+            foreach (var prop in properties)
+            {
+                switch (prop.key)
+                {
+                    case "value": double.TryParse(prop.value, out value); break;
+                }
+            }
+        }
+    }
 }
 

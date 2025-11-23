@@ -111,6 +111,46 @@ namespace RPGGame.Map.Editor
         }
     }
     
+    public class SelectNode : NoiseGraphNode
+    {
+        public double minimum = -1.0;
+        public double maximum = 1.0;
+        public double fallOff = 0.0;
+        
+        public SelectNode() : base("Select", "Select")
+        {
+            CreateInputPort("A");
+            CreateInputPort("B");
+            CreateInputPort("Control");
+            CreateOutputPort("Output");
+            RefreshExpandedState();
+            RefreshPorts();
+        }
+        
+        protected override List<NoisePropertyData> GetSerializedProperties()
+        {
+            return new List<NoisePropertyData>
+            {
+                new NoisePropertyData { key = "minimum", value = minimum.ToString(), valueType = "double" },
+                new NoisePropertyData { key = "maximum", value = maximum.ToString(), valueType = "double" },
+                new NoisePropertyData { key = "fallOff", value = fallOff.ToString(), valueType = "double" }
+            };
+        }
+        
+        protected override void DeserializeProperties(List<NoisePropertyData> properties)
+        {
+            foreach (var prop in properties)
+            {
+                switch (prop.key)
+                {
+                    case "minimum": double.TryParse(prop.value, out minimum); break;
+                    case "maximum": double.TryParse(prop.value, out maximum); break;
+                    case "fallOff": double.TryParse(prop.value, out fallOff); break;
+                }
+            }
+        }
+    }
+    
     public class CurveNode : NoiseGraphNode
     {
         [SerializeField]
@@ -124,9 +164,9 @@ namespace RPGGame.Map.Editor
                 {
                     // Ensure we have at least 4 keys
                     curve = new AnimationCurve();
-                    curve.AddKey(0f, -1f);
-                    curve.AddKey(0.33f, -0.33f);
-                    curve.AddKey(0.67f, 0.33f);
+                    curve.AddKey(-1f, -1f);
+                    curve.AddKey(-0.33f, -0.33f);
+                    curve.AddKey(0.33f, 0.33f);
                     curve.AddKey(1f, 1f);
                 }
                 return curve;
@@ -137,9 +177,9 @@ namespace RPGGame.Map.Editor
                 {
                     Debug.LogWarning("Curve must have at least 4 keys. Using default curve.");
                     curve = new AnimationCurve();
-                    curve.AddKey(0f, -1f);
-                    curve.AddKey(0.33f, -0.33f);
-                    curve.AddKey(0.67f, 0.33f);
+                    curve.AddKey(-1f, -1f);
+                    curve.AddKey(-0.33f, -0.33f);
+                    curve.AddKey(0.33f, 0.33f);
                     curve.AddKey(1f, 1f);
                 }
                 else
@@ -156,11 +196,13 @@ namespace RPGGame.Map.Editor
             CreateOutputPort("Output");
             
             // Initialize with at least 4 keys
+            // X-axis (time) = input noise value threshold (typically -1 to 1)
+            // Y-axis (value) = output value (typically -1 to 1, but can be any range)
             curve = new AnimationCurve();
-            curve.AddKey(0f, -1f);
-            curve.AddKey(0.33f, -0.33f);
-            curve.AddKey(0.67f, 0.33f);
-            curve.AddKey(1f, 1f);
+            curve.AddKey(-1f, -1f);   // Low noise input → low output
+            curve.AddKey(-0.33f, -0.33f);
+            curve.AddKey(0.33f, 0.33f);
+            curve.AddKey(1f, 1f);     // High noise input → high output
             
             RefreshExpandedState();
             RefreshPorts();

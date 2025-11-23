@@ -116,6 +116,15 @@ namespace RPGGame.Map.Editor
                         return ridged;
                     }
                     break;
+                case "Const":
+                    var constNode = node as ConstNoiseNode;
+                    if (constNode != null)
+                    {
+                        var constModule = new LibNoise.Generator.Const();
+                        constModule.Value = constNode.value;
+                        return constModule;
+                    }
+                    break;
                 case "Curve":
                     var curveNode = node as CurveNode;
                     if (curveNode != null)
@@ -128,22 +137,26 @@ namespace RPGGame.Map.Editor
                         var curve = new LibNoise.Operator.Curve(perlin);
                         
                         // Convert AnimationCurve to LibNoise control points
+                        // LibNoise Curve.Add(inputValue, outputValue):
+                        //   - inputValue: the noise input value threshold
+                        //   - outputValue: the output value when that threshold is reached
+                        // AnimationCurve mapping:
+                        //   - time (X-axis) = input noise value threshold
+                        //   - value (Y-axis) = output value
                         var animCurve = curveNode.Curve;
                         if (animCurve != null && animCurve.length >= 4)
                         {
                             foreach (var key in animCurve.keys)
                             {
-                                // LibNoise: Key is input, Value is output
-                                // AnimationCurve: time is input, value is output
                                 curve.Add(key.time, key.value);
                             }
                         }
                         else
                         {
                             // Default curve
-                            curve.Add(0.0, -1.0);
-                            curve.Add(0.33, -0.33);
-                            curve.Add(0.67, 0.33);
+                            curve.Add(-1.0, -1.0);
+                            curve.Add(-0.33, -0.33);
+                            curve.Add(0.33, 0.33);
                             curve.Add(1.0, 1.0);
                         }
                         

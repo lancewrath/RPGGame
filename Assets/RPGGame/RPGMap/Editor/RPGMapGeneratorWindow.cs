@@ -392,6 +392,7 @@ namespace RPGGame.Map.Editor
                 case "Perlin": return new PerlinNoiseNode();
                 case "Billow": return new BillowNoiseNode();
                 case "RidgedMultifractal": return new RidgedMultifractalNoiseNode();
+                case "Const": return new ConstNoiseNode();
                 case "Add": return new AddNode();
                 case "Multiply": return new MultiplyNode();
                 case "Subtract": return new SubtractNode();
@@ -401,6 +402,7 @@ namespace RPGGame.Map.Editor
                 case "Power": return new PowerNode();
                 case "Abs": return new AbsNode();
                 case "Invert": return new InvertNode();
+                case "Select": return new SelectNode();
                 case "Curve": return new CurveNode();
                 case "Output": return new NoiseOutputNode();
                 default: return null;
@@ -441,6 +443,11 @@ namespace RPGGame.Map.Editor
                 {
                     level = 2,
                     userData = typeof(RidgedMultifractalNoiseNode)
+                },
+                new SearchTreeEntry(new GUIContent("Constant", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(ConstNoiseNode)
                 },
                 new SearchTreeGroupEntry(new GUIContent("Operators"), 1),
                 new SearchTreeEntry(new GUIContent("Add", indentationIcon))
@@ -487,6 +494,11 @@ namespace RPGGame.Map.Editor
                 {
                     level = 2,
                     userData = typeof(InvertNode)
+                },
+                new SearchTreeEntry(new GUIContent("Select", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(SelectNode)
                 },
                 new SearchTreeEntry(new GUIContent("Curve", indentationIcon))
                 {
@@ -535,6 +547,8 @@ namespace RPGGame.Map.Editor
                 node = new BillowNoiseNode();
             else if (nodeType == typeof(RidgedMultifractalNoiseNode))
                 node = new RidgedMultifractalNoiseNode();
+            else if (nodeType == typeof(ConstNoiseNode))
+                node = new ConstNoiseNode();
             else if (nodeType == typeof(AddNode))
                 node = new AddNode();
             else if (nodeType == typeof(MultiplyNode))
@@ -553,6 +567,8 @@ namespace RPGGame.Map.Editor
                 node = new AbsNode();
             else if (nodeType == typeof(InvertNode))
                 node = new InvertNode();
+            else if (nodeType == typeof(SelectNode))
+                node = new SelectNode();
             else if (nodeType == typeof(CurveNode))
                 node = new CurveNode();
             else if (nodeType == typeof(NoiseOutputNode))

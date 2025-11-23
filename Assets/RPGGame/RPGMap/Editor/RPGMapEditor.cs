@@ -22,10 +22,21 @@ namespace RPGGame.Map.Editor
                 RPGMapGeneratorWindow.OpenWindowForMap(map.MapName, map.HeightmapGraphName);
             }
             
+            EditorGUILayout.EndHorizontal();
+            
+            EditorGUILayout.BeginHorizontal();
+            
             if (GUILayout.Button("Generate Terrain"))
             {
                 map.GenerateTerrain();
             }
+            
+            GUI.enabled = map.TerrainTileCount > 0;
+            if (GUILayout.Button("Regenerate Terrain"))
+            {
+                map.RegenerateTerrain();
+            }
+            GUI.enabled = true;
             
             EditorGUILayout.EndHorizontal();
             

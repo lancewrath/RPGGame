@@ -76,6 +76,12 @@ namespace RPGGame.Map.Editor
                 case "RidgedMultifractal":
                     CreateRidgedMultifractalProperties(node as RidgedMultifractalNoiseNode);
                     break;
+                case "Const":
+                    CreateConstProperties(node as ConstNoiseNode);
+                    break;
+                case "Select":
+                    CreateSelectProperties(node as SelectNode);
+                    break;
                 case "Curve":
                     CreateCurveProperties(node as CurveNode);
                     break;
@@ -127,6 +133,13 @@ namespace RPGGame.Map.Editor
             AddIntField("Octave Count", node.octaveCount, (val) => node.octaveCount = val);
             AddIntField("Seed", node.seed, (val) => node.seed = val);
             AddEnumField("Quality", node.quality, (val) => node.quality = val);
+        }
+        
+        private void CreateConstProperties(ConstNoiseNode node)
+        {
+            if (node == null) return;
+            
+            AddDoubleField("Value", node.value, (val) => node.value = val);
         }
         
         private void AddDoubleField(string label, double value, Action<double> onChanged)
@@ -194,6 +207,15 @@ namespace RPGGame.Map.Editor
             contentContainer.Add(container);
         }
         
+        private void CreateSelectProperties(SelectNode node)
+        {
+            if (node == null) return;
+            
+            AddDoubleField("Minimum", node.minimum, (val) => node.minimum = val);
+            AddDoubleField("Maximum", node.maximum, (val) => node.maximum = val);
+            AddDoubleField("Fall Off", node.fallOff, (val) => node.fallOff = val);
+        }
+        
         private void CreateCurveProperties(CurveNode node)
         {
             if (node == null) return;
@@ -205,6 +227,14 @@ namespace RPGGame.Map.Editor
             labelElement.style.fontSize = 11;
             labelElement.style.color = new Color(0.8f, 0.8f, 0.8f);
             container.Add(labelElement);
+            
+            // Add help text explaining the mapping
+            var helpText = new Label("X-axis = Input noise value (-1 to 1)\nY-axis = Output value");
+            helpText.style.fontSize = 9;
+            helpText.style.color = new Color(0.6f, 0.6f, 0.6f);
+            helpText.style.marginBottom = 2;
+            helpText.style.whiteSpace = WhiteSpace.Normal;
+            container.Add(helpText);
             
             // Use IMGUIContainer to display Unity's AnimationCurve editor
             var curveContainer = new IMGUIContainer(() => {

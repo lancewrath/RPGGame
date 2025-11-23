@@ -34,7 +34,7 @@ namespace RPGGame.Map.Editor
         private bool previewExpanded = false;
         private NoiseGraphView graphView;
         
-        public bool HasPreview => NodeType == "Perlin" || NodeType == "Billow" || NodeType == "RidgedMultifractal" || NodeType == "Curve";
+        public bool HasPreview => NodeType == "Perlin" || NodeType == "Billow" || NodeType == "RidgedMultifractal" || NodeType == "Const" || NodeType == "Curve";
         
         public NoiseGraphNode(string nodeType, string title)
         {
