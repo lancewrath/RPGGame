@@ -81,6 +81,11 @@ namespace RPGGame.Map.Editor
             propertyInspector = new NoiseNodePropertyInspector();
             // Inspector has fixed width, positioned on the right
             propertyInspector.style.flexShrink = 0;
+            
+            // Set callback to get portal names from graph view
+            propertyInspector.SetGetPortalNamesCallback(() => {
+                return graphView != null ? graphView.GetPortalNames() : new List<string>();
+            });
         }
         
         private void GenerateToolbar()
@@ -230,6 +235,20 @@ namespace RPGGame.Map.Editor
                 selectedNode = node;
             }
             OnNodeSelected?.Invoke(selectedNode);
+        }
+        
+        // Get list of portal names from all Portal In nodes in the graph
+        public List<string> GetPortalNames()
+        {
+            List<string> portalNames = new List<string>();
+            foreach (var node in nodes.ToList().OfType<PortalInNode>())
+            {
+                if (!string.IsNullOrEmpty(node.portalName) && !portalNames.Contains(node.portalName))
+                {
+                    portalNames.Add(node.portalName);
+                }
+            }
+            return portalNames;
         }
         
         // Method to refresh previews when graph changes
@@ -404,7 +423,11 @@ namespace RPGGame.Map.Editor
                 case "Invert": return new InvertNode();
                 case "Select": return new SelectNode();
                 case "Curve": return new CurveNode();
+                case "Slope": return new SlopeNode();
+                case "Portal In": return new PortalInNode();
+                case "Portal Out": return new PortalOutNode();
                 case "Output": return new NoiseOutputNode();
+                case "SplatOutput": return new SplatOutputNode();
                 default: return null;
             }
         }
@@ -505,11 +528,32 @@ namespace RPGGame.Map.Editor
                     level = 2,
                     userData = typeof(CurveNode)
                 },
+                new SearchTreeEntry(new GUIContent("Slope", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(SlopeNode)
+                },
+                new SearchTreeGroupEntry(new GUIContent("Utility"), 1),
+                new SearchTreeEntry(new GUIContent("Portal In", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(PortalInNode)
+                },
+                new SearchTreeEntry(new GUIContent("Portal Out", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(PortalOutNode)
+                },
                 new SearchTreeGroupEntry(new GUIContent("Output"), 1),
                 new SearchTreeEntry(new GUIContent("Noise Output", indentationIcon))
                 {
                     level = 2,
                     userData = typeof(NoiseOutputNode)
+                },
+                new SearchTreeEntry(new GUIContent("Splat Output", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(SplatOutputNode)
                 }
             };
             
@@ -571,8 +615,16 @@ namespace RPGGame.Map.Editor
                 node = new SelectNode();
             else if (nodeType == typeof(CurveNode))
                 node = new CurveNode();
+            else if (nodeType == typeof(SlopeNode))
+                node = new SlopeNode();
+            else if (nodeType == typeof(PortalInNode))
+                node = new PortalInNode();
+            else if (nodeType == typeof(PortalOutNode))
+                node = new PortalOutNode();
             else if (nodeType == typeof(NoiseOutputNode))
                 node = new NoiseOutputNode();
+            else if (nodeType == typeof(SplatOutputNode))
+                node = new SplatOutputNode();
             
             if (node != null)
             {

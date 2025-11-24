@@ -47,12 +47,17 @@ namespace RPGGame.Map
             
             // Build all modules
             Dictionary<string, ModuleBase> builtModules = new Dictionary<string, ModuleBase>();
+            Dictionary<string, ModuleBase> portalModules = new Dictionary<string, ModuleBase>(); // Portal name -> module
             
-            // First pass: create all modules (skip Output nodes)
+            // First pass: create all modules (skip Output nodes and Portal In/Out nodes - they're handled specially)
             foreach (var nodeData in graphData.nodes)
             {
                 // Skip Output nodes - they're just markers
                 if (nodeData.nodeType == "Output")
+                    continue;
+                
+                // Skip Portal In and Portal Out nodes - they're handled in a separate pass
+                if (nodeData.nodeType == "Portal In" || nodeData.nodeType == "Portal Out")
                     continue;
                     
                 ModuleBase module = CreateModule(nodeData);
@@ -62,13 +67,32 @@ namespace RPGGame.Map
                 }
             }
             
-            // Second pass: connect modules (skip edges connected to Output nodes)
+            // Second pass: connect modules (skip edges connected to Output nodes and Portal In nodes)
+            // Also skip edges FROM Portal Out nodes - they'll be handled after Portal Out modules are built
+            List<NoiseEdgeData> portalOutEdges = new List<NoiseEdgeData>();
+            
             foreach (var edge in graphData.edges)
             {
                 // Skip edges where input is an Output node (Output nodes don't create modules)
                 var inputNode = graphData.nodes.FirstOrDefault(n => n.guid == edge.inputNodeGuid);
                 if (inputNode != null && inputNode.nodeType == "Output")
                     continue;
+                
+                // Skip edges where input is a SplatOutput node (they're handled separately)
+                if (inputNode != null && inputNode.nodeType == "SplatOutput")
+                    continue;
+                
+                // Skip edges where input is a Portal In node (they're handled separately)
+                if (inputNode != null && inputNode.nodeType == "Portal In")
+                    continue;
+                
+                // Collect edges FROM Portal Out nodes to process later
+                var outputNodeData = graphData.nodes.FirstOrDefault(n => n.guid == edge.outputNodeGuid);
+                if (outputNodeData != null && outputNodeData.nodeType == "Portal Out")
+                {
+                    portalOutEdges.Add(edge);
+                    continue;
+                }
                 
                 if (builtModules.TryGetValue(edge.outputNodeGuid, out ModuleBase outputModule) &&
                     builtModules.TryGetValue(edge.inputNodeGuid, out ModuleBase inputModule))
@@ -93,6 +117,70 @@ namespace RPGGame.Map
                     if (!builtModules.ContainsKey(edge.inputNodeGuid))
                     {
                         Debug.LogWarning($"Cannot connect module: input module not found (GUID: {edge.inputNodeGuid})");
+                    }
+                }
+            }
+            
+            // Third pass: Handle Portal In nodes - find their input modules and store by portal name
+            foreach (var portalInNode in graphData.nodes.Where(n => n.nodeType == "Portal In"))
+            {
+                // Find the edge connected to the Portal In node's input
+                var portalInEdge = graphData.edges.FirstOrDefault(e => e.inputNodeGuid == portalInNode.guid);
+                if (portalInEdge != null && builtModules.TryGetValue(portalInEdge.outputNodeGuid, out ModuleBase portalInputModule))
+                {
+                    // Get portal name from properties
+                    string portalName = GetPropertyString(portalInNode, "portalName", "Portal");
+                    if (!string.IsNullOrEmpty(portalName))
+                    {
+                        portalModules[portalName] = portalInputModule;
+                    }
+                }
+            }
+            
+            // Fourth pass: Handle Portal Out nodes - create modules that reference portal modules
+            foreach (var portalOutNode in graphData.nodes.Where(n => n.nodeType == "Portal Out"))
+            {
+                // Get portal name from properties
+                string portalName = GetPropertyString(portalOutNode, "selectedPortalName", "");
+                if (!string.IsNullOrEmpty(portalName) && portalModules.TryGetValue(portalName, out ModuleBase portalModule))
+                {
+                    // Portal Out nodes just reference the portal's module
+                    builtModules[portalOutNode.guid] = portalModule;
+                }
+                else
+                {
+                    Debug.LogWarning($"Portal Out node (GUID: {portalOutNode.guid}) references portal '{portalName}' which doesn't exist or has no input!");
+                }
+            }
+            
+            // Fifth pass: Connect edges FROM Portal Out nodes (now that Portal Out modules are built)
+            foreach (var edge in portalOutEdges)
+            {
+                var inputNode = graphData.nodes.FirstOrDefault(n => n.guid == edge.inputNodeGuid);
+                if (inputNode != null && (inputNode.nodeType == "Output" || inputNode.nodeType == "SplatOutput"))
+                    continue;
+                
+                if (builtModules.TryGetValue(edge.outputNodeGuid, out ModuleBase outputModule) &&
+                    builtModules.TryGetValue(edge.inputNodeGuid, out ModuleBase inputModule))
+                {
+                    if (inputModule.SourceModuleCount > 0 && edge.inputPortIndex >= 0 && edge.inputPortIndex < inputModule.SourceModuleCount)
+                    {
+                        inputModule[edge.inputPortIndex] = outputModule;
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"Cannot connect Portal Out module: input module '{inputNode?.nodeType}' (GUID: {edge.inputNodeGuid}) has SourceModuleCount={inputModule.SourceModuleCount}, but trying to connect to port index {edge.inputPortIndex}");
+                    }
+                }
+                else
+                {
+                    if (!builtModules.ContainsKey(edge.outputNodeGuid))
+                    {
+                        Debug.LogWarning($"Cannot connect Portal Out module: Portal Out module not found (GUID: {edge.outputNodeGuid})");
+                    }
+                    if (!builtModules.ContainsKey(edge.inputNodeGuid))
+                    {
+                        Debug.LogWarning($"Cannot connect Portal Out module: input module not found (GUID: {edge.inputNodeGuid})");
                     }
                 }
             }
@@ -130,6 +218,42 @@ namespace RPGGame.Map
                         }
                     }
                 }
+                else if (nodeData != null && nodeData.nodeType == "Select")
+                {
+                    // Validate Select modules have all 3 inputs (A, B, Control)
+                    var selectModule = kvp.Value as LibNoise.Operator.Select;
+                    if (selectModule != null)
+                    {
+                        bool needsFallback = false;
+                        try
+                        {
+                            var testA = selectModule[0];
+                            var testB = selectModule[1];
+                            var testControl = selectModule[2];
+                            // If we get here, all modules exist
+                        }
+                        catch (System.ArgumentNullException)
+                        {
+                            needsFallback = true;
+                        }
+                        catch (System.ArgumentOutOfRangeException)
+                        {
+                            needsFallback = true;
+                        }
+                        
+                        if (needsFallback)
+                        {
+                            Debug.LogWarning($"Select module (GUID: {kvp.Key}) is missing one or more input modules! Using default Perlin noise as fallback.");
+                            // Use default Perlin noise for all missing inputs
+                            var defaultInput = new Perlin();
+                            defaultInput.Frequency = 1.0;
+                            
+                            try { var test = selectModule[0]; } catch { selectModule[0] = defaultInput; }
+                            try { var test = selectModule[1]; } catch { selectModule[1] = defaultInput; }
+                            try { var test = selectModule[2]; } catch { selectModule[2] = defaultInput; }
+                        }
+                    }
+                }
             }
             
             // Return the output module
@@ -141,7 +265,7 @@ namespace RPGGame.Map
             return null;
         }
         
-        private static ModuleBase CreateModule(NoiseNodeData nodeData)
+        public static ModuleBase CreateModule(NoiseNodeData nodeData)
         {
             switch (nodeData.nodeType)
             {
@@ -181,6 +305,13 @@ namespace RPGGame.Map
                     return CreateSelect(nodeData);
                 case "Curve":
                     return CreateCurve(nodeData);
+                case "Slope":
+                    return CreateSlope(nodeData);
+                case "Portal In":
+                case "Portal Out":
+                case "SplatOutput":
+                    // These node types are handled specially in BuildModuleGraph, not as regular modules
+                    return null;
                 default:
                     Debug.LogWarning($"Unknown node type: {nodeData.nodeType}");
                     return null;
@@ -345,6 +476,14 @@ namespace RPGGame.Map
             return defaultValue;
         }
         
+        private static string GetPropertyString(NoiseNodeData nodeData, string key, string defaultValue)
+        {
+            var prop = nodeData.properties?.FirstOrDefault(p => p.key == key);
+            if (prop != null && !string.IsNullOrEmpty(prop.value))
+                return prop.value;
+            return defaultValue;
+        }
+        
         private static int GetPropertyInt(NoiseNodeData nodeData, string key, int defaultValue)
         {
             var prop = nodeData.properties?.FirstOrDefault(p => p.key == key);
@@ -359,6 +498,20 @@ namespace RPGGame.Map
             if (prop != null && System.Enum.TryParse<QualityMode>(prop.value, out QualityMode result))
                 return result;
             return defaultValue;
+        }
+        
+        private static LibNoise.Operator.Slope CreateSlope(NoiseNodeData nodeData)
+        {
+            double sampleDistance = GetPropertyDouble(nodeData, "sampleDistance", 1.0);
+            var slope = new LibNoise.Operator.Slope(sampleDistance);
+            
+            // Set angle filtering parameters
+            slope.MinAngle = GetPropertyDouble(nodeData, "minAngle", 0.0);
+            slope.MaxAngle = GetPropertyDouble(nodeData, "maxAngle", 90.0);
+            slope.SmoothRange = GetPropertyDouble(nodeData, "smoothRange", 0.0);
+            slope.TerrainHeight = GetPropertyDouble(nodeData, "terrainHeight", 1.0);
+            
+            return slope;
         }
     }
 }

@@ -279,5 +279,135 @@ namespace RPGGame.Map.Editor
             public float outTangent;
         }
     }
+    
+    public class SlopeNode : NoiseGraphNode
+    {
+        public double sampleDistance = 1.0;
+        public double minAngle = 0.0; // Minimum angle in degrees
+        public double maxAngle = 90.0; // Maximum angle in degrees
+        public double smoothRange = 0.0; // Smooth transition range in degrees
+        public double terrainHeight = 1.0; // Terrain height scale
+        
+        public SlopeNode() : base("Slope", "Slope")
+        {
+            CreateInputPort("Heightmap");
+            CreateOutputPort("Slope");
+            
+            RefreshExpandedState();
+            RefreshPorts();
+        }
+        
+        protected override List<NoisePropertyData> GetSerializedProperties()
+        {
+            return new List<NoisePropertyData>
+            {
+                new NoisePropertyData { key = "sampleDistance", value = sampleDistance.ToString(), valueType = "double" },
+                new NoisePropertyData { key = "minAngle", value = minAngle.ToString(), valueType = "double" },
+                new NoisePropertyData { key = "maxAngle", value = maxAngle.ToString(), valueType = "double" },
+                new NoisePropertyData { key = "smoothRange", value = smoothRange.ToString(), valueType = "double" },
+                new NoisePropertyData { key = "terrainHeight", value = terrainHeight.ToString(), valueType = "double" }
+            };
+        }
+        
+        protected override void DeserializeProperties(List<NoisePropertyData> properties)
+        {
+            foreach (var prop in properties)
+            {
+                if (prop.key == "sampleDistance")
+                {
+                    double.TryParse(prop.value, out sampleDistance);
+                }
+                else if (prop.key == "minAngle")
+                {
+                    double.TryParse(prop.value, out minAngle);
+                }
+                else if (prop.key == "maxAngle")
+                {
+                    double.TryParse(prop.value, out maxAngle);
+                }
+                else if (prop.key == "smoothRange")
+                {
+                    double.TryParse(prop.value, out smoothRange);
+                }
+                else if (prop.key == "terrainHeight")
+                {
+                    double.TryParse(prop.value, out terrainHeight);
+                }
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Portal In node - accepts an input and stores it with a name for use by Portal Out nodes.
+    /// This helps organize node graphs by avoiding crossing connections.
+    /// </summary>
+    public class PortalInNode : NoiseGraphNode
+    {
+        public string portalName = "Portal";
+        
+        public PortalInNode() : base("Portal In", "Portal In")
+        {
+            CreateInputPort("Input");
+            CreateOutputPort("Output"); // Hidden output for internal use
+            RefreshExpandedState();
+            RefreshPorts();
+            AddToClassList("portal-in-node");
+        }
+        
+        protected override List<NoisePropertyData> GetSerializedProperties()
+        {
+            return new List<NoisePropertyData>
+            {
+                new NoisePropertyData { key = "portalName", value = portalName, valueType = "string" }
+            };
+        }
+        
+        protected override void DeserializeProperties(List<NoisePropertyData> properties)
+        {
+            foreach (var prop in properties)
+            {
+                if (prop.key == "portalName")
+                {
+                    portalName = prop.value ?? "Portal";
+                }
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Portal Out node - outputs the value from a connected Portal In node.
+    /// Select a Portal In node by name from the dropdown.
+    /// </summary>
+    public class PortalOutNode : NoiseGraphNode
+    {
+        public string selectedPortalName = "";
+        
+        public PortalOutNode() : base("Portal Out", "Portal Out")
+        {
+            CreateOutputPort("Output");
+            RefreshExpandedState();
+            RefreshPorts();
+            AddToClassList("portal-out-node");
+        }
+        
+        protected override List<NoisePropertyData> GetSerializedProperties()
+        {
+            return new List<NoisePropertyData>
+            {
+                new NoisePropertyData { key = "selectedPortalName", value = selectedPortalName, valueType = "string" }
+            };
+        }
+        
+        protected override void DeserializeProperties(List<NoisePropertyData> properties)
+        {
+            foreach (var prop in properties)
+            {
+                if (prop.key == "selectedPortalName")
+                {
+                    selectedPortalName = prop.value ?? "";
+                }
+            }
+        }
+    }
 }
 

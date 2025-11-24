@@ -2,6 +2,7 @@ using UnityEngine;
 using LibNoise;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace RPGGame.Map
 {
@@ -23,6 +24,7 @@ namespace RPGGame.Map
         private Dictionary<Vector2Int, GameObject> terrainTiles = new Dictionary<Vector2Int, GameObject>();
         private ModuleBase heightmapModule;
         private Transform tilesParent;
+        private List<SplatOutputData> splatOutputs = new List<SplatOutputData>();
         
         private void Start()
         {
@@ -210,6 +212,147 @@ namespace RPGGame.Map
             }
             
             terrainTiles[tileCoord] = tileObj;
+            
+            // Apply splat maps if any exist
+            if (splatOutputs != null && splatOutputs.Count > 0)
+            {
+                ApplySplatMaps(terrain, tileX, tileZ);
+            }
+        }
+        
+        private void ApplySplatMaps(Terrain terrain, int tileX, int tileZ)
+        {
+            if (splatOutputs == null || splatOutputs.Count == 0)
+                return;
+            
+            TerrainData terrainData = terrain.terrainData;
+            int alphamapResolution = terrainData.alphamapResolution;
+            
+            // Create terrain layers from splat outputs
+            List<TerrainLayer> terrainLayers = new List<TerrainLayer>();
+            foreach (var splatData in splatOutputs)
+            {
+                TerrainLayer layer = new TerrainLayer();
+                
+                // Load diffuse texture
+                if (!string.IsNullOrEmpty(splatData.diffuseTexturePath))
+                {
+                    string diffusePath = System.IO.Path.Combine(Application.streamingAssetsPath, splatData.diffuseTexturePath);
+                    if (System.IO.File.Exists(diffusePath))
+                    {
+                        byte[] data = System.IO.File.ReadAllBytes(diffusePath);
+                        Texture2D diffuseTex = new Texture2D(2, 2);
+                        diffuseTex.LoadImage(data);
+                        layer.diffuseTexture = diffuseTex;
+                    }
+                }
+                
+                // Load normal map
+                if (!string.IsNullOrEmpty(splatData.normalMapPath))
+                {
+                    string normalPath = System.IO.Path.Combine(Application.streamingAssetsPath, splatData.normalMapPath);
+                    if (System.IO.File.Exists(normalPath))
+                    {
+                        byte[] data = System.IO.File.ReadAllBytes(normalPath);
+                        Texture2D normalTex = new Texture2D(2, 2);
+                        normalTex.LoadImage(data);
+                        layer.normalMapTexture = normalTex;
+                    }
+                }
+                
+                // Set tiling settings
+                layer.tileSize = splatData.tileSize;
+                layer.tileOffset = splatData.tileOffset;
+                
+                // Generate mask map texture
+                // Mask map format: R=Metallic, G=Occlusion, B=Height, A=Smoothness
+                Texture2D maskMap = GenerateMaskMap(splatData.metallic, splatData.occlusion, splatData.height, splatData.smoothness);
+                layer.maskMapTexture = maskMap;
+                
+                terrainLayers.Add(layer);
+            }
+            
+            // Set terrain layers
+            terrainData.terrainLayers = terrainLayers.ToArray();
+            
+            // Generate splat maps from noise modules
+            float[,,] alphamaps = new float[alphamapResolution, alphamapResolution, splatOutputs.Count];
+            
+            double offsetX = tileX * tileSize.x;
+            double offsetZ = tileZ * tileSize.z;
+            
+            for (int x = 0; x < alphamapResolution; x++)
+            {
+                for (int z = 0; z < alphamapResolution; z++)
+                {
+                    // Convert to world coordinates
+                    double normalizedX = (double)x / (alphamapResolution - 1);
+                    double normalizedZ = (double)z / (alphamapResolution - 1);
+                    
+                    double worldX = offsetX + normalizedX * tileSize.x;
+                    double worldZ = offsetZ + normalizedZ * tileSize.z;
+                    
+                    // Get noise values for each splat output
+                    float[] values = new float[splatOutputs.Count];
+                    float sum = 0f;
+                    
+                    for (int i = 0; i < splatOutputs.Count; i++)
+                    {
+                        if (splatOutputs[i].noiseModule != null)
+                        {
+                            double noiseValue = splatOutputs[i].noiseModule.GetValue(worldX, 0, worldZ);
+                            // Normalize from [-1,1] to [0,1] and use as weight
+                            float weight = (float)((noiseValue + 1.0) * 0.5);
+                            // Clamp to [0,1]
+                            weight = Mathf.Clamp01(weight);
+                            values[i] = weight;
+                            sum += weight;
+                        }
+                        else
+                        {
+                            values[i] = 0f;
+                        }
+                    }
+                    
+                    // Normalize weights so they sum to 1
+                    if (sum > 0.0001f)
+                    {
+                        for (int i = 0; i < splatOutputs.Count; i++)
+                        {
+                            values[i] /= sum;
+                            alphamaps[z, x, i] = values[i];
+                        }
+                    }
+                    else
+                    {
+                        // If no weights, distribute evenly
+                        float evenWeight = 1f / splatOutputs.Count;
+                        for (int i = 0; i < splatOutputs.Count; i++)
+                        {
+                            alphamaps[z, x, i] = evenWeight;
+                        }
+                    }
+                }
+            }
+            
+            // Apply alphamaps to terrain
+            terrainData.SetAlphamaps(0, 0, alphamaps);
+        }
+        
+        private Texture2D GenerateMaskMap(float metallic, float occlusion, float height, float smoothness)
+        {
+            // Create a 1x1 texture with the mask map values
+            // Format: R=Metallic, G=Occlusion, B=Height, A=Smoothness
+            Texture2D maskMap = new Texture2D(1, 1, TextureFormat.RGBA32, false);
+            Color maskColor = new Color(
+                Mathf.Clamp01(metallic),      // R channel
+                Mathf.Clamp01(occlusion),     // G channel
+                Mathf.Clamp01(height),        // B channel
+                Mathf.Clamp01(smoothness)     // A channel
+            );
+            maskMap.SetPixel(0, 0, maskColor);
+            maskMap.Apply();
+            return maskMap;
         }
         
         private float[,] GenerateHeightmap(int tileX, int tileZ, int heightmapSize)
@@ -260,6 +403,7 @@ namespace RPGGame.Map
             {
                 Debug.LogWarning($"Heightmap graph not found at {graphPath}. Using default noise.");
                 CreateDefaultHeightmap();
+                splatOutputs.Clear();
                 return;
             }
             
@@ -268,7 +412,147 @@ namespace RPGGame.Map
                 string json = File.ReadAllText(graphPath);
                 NoiseGraphData graphData = JsonUtility.FromJson<NoiseGraphData>(json);
                 
-                // Build the module graph from the node graph
+                // Extract splat outputs
+                splatOutputs = SplatOutputBuilder.ExtractSplatOutputs(graphData);
+                
+                // Build splat output modules
+                Dictionary<string, ModuleBase> builtModules = new Dictionary<string, ModuleBase>();
+                
+                // First pass: create all modules (skip Output, SplatOutput, and Portal nodes)
+                foreach (var nodeData in graphData.nodes)
+                {
+                    if (nodeData.nodeType == "Output" || nodeData.nodeType == "SplatOutput" || 
+                        nodeData.nodeType == "Portal In" || nodeData.nodeType == "Portal Out")
+                        continue;
+                    
+                    ModuleBase module = NoiseGraphBuilder.CreateModule(nodeData);
+                    if (module != null)
+                    {
+                        builtModules[nodeData.guid] = module;
+                    }
+                }
+                
+                // Second pass: connect modules (skip edges to Output, SplatOutput, and Portal In nodes)
+                foreach (var edge in graphData.edges)
+                {
+                    var inputNode = graphData.nodes.FirstOrDefault(n => n.guid == edge.inputNodeGuid);
+                    if (inputNode != null && (inputNode.nodeType == "Output" || inputNode.nodeType == "SplatOutput" || inputNode.nodeType == "Portal In"))
+                        continue;
+                    
+                    // Skip edges FROM Portal Out nodes - they'll be handled by BuildModuleGraph
+                    var outputNode = graphData.nodes.FirstOrDefault(n => n.guid == edge.outputNodeGuid);
+                    if (outputNode != null && outputNode.nodeType == "Portal Out")
+                        continue;
+                    
+                    if (builtModules.TryGetValue(edge.outputNodeGuid, out ModuleBase outputModule) &&
+                        builtModules.TryGetValue(edge.inputNodeGuid, out ModuleBase inputModule))
+                    {
+                        if (inputModule.SourceModuleCount > 0 && edge.inputPortIndex >= 0 && edge.inputPortIndex < inputModule.SourceModuleCount)
+                        {
+                            inputModule[edge.inputPortIndex] = outputModule;
+                        }
+                    }
+                }
+                
+                // Build portal modules (similar to BuildModuleGraph logic)
+                Dictionary<string, ModuleBase> portalModules = new Dictionary<string, ModuleBase>();
+                
+                // Handle Portal In nodes - find their input modules and store by portal name
+                foreach (var portalInNode in graphData.nodes.Where(n => n.nodeType == "Portal In"))
+                {
+                    var portalInEdge = graphData.edges.FirstOrDefault(e => e.inputNodeGuid == portalInNode.guid);
+                    if (portalInEdge != null && builtModules.TryGetValue(portalInEdge.outputNodeGuid, out ModuleBase portalInputModule))
+                    {
+                        string portalName = GetPropertyString(portalInNode, "portalName", "Portal");
+                        if (!string.IsNullOrEmpty(portalName))
+                        {
+                            portalModules[portalName] = portalInputModule;
+                        }
+                    }
+                }
+                
+                // Handle Portal Out nodes - create modules that reference portal modules
+                foreach (var portalOutNode in graphData.nodes.Where(n => n.nodeType == "Portal Out"))
+                {
+                    string portalName = GetPropertyString(portalOutNode, "selectedPortalName", "");
+                    if (!string.IsNullOrEmpty(portalName) && portalModules.TryGetValue(portalName, out ModuleBase portalModule))
+                    {
+                        builtModules[portalOutNode.guid] = portalModule;
+                    }
+                }
+                
+                // Connect edges FROM Portal Out nodes (now that Portal Out modules are built)
+                foreach (var edge in graphData.edges)
+                {
+                    var outputNode = graphData.nodes.FirstOrDefault(n => n.guid == edge.outputNodeGuid);
+                    if (outputNode != null && outputNode.nodeType == "Portal Out")
+                    {
+                        var inputNode = graphData.nodes.FirstOrDefault(n => n.guid == edge.inputNodeGuid);
+                        if (inputNode != null && (inputNode.nodeType == "Output" || inputNode.nodeType == "SplatOutput"))
+                            continue;
+                        
+                        if (builtModules.TryGetValue(edge.outputNodeGuid, out ModuleBase outputModule) &&
+                            builtModules.TryGetValue(edge.inputNodeGuid, out ModuleBase inputModule))
+                        {
+                            if (inputModule.SourceModuleCount > 0 && edge.inputPortIndex >= 0 && edge.inputPortIndex < inputModule.SourceModuleCount)
+                            {
+                                inputModule[edge.inputPortIndex] = outputModule;
+                            }
+                        }
+                    }
+                }
+                
+                // Validate Select modules (similar to BuildModuleGraph validation)
+                foreach (var kvp in builtModules)
+                {
+                    var nodeData = graphData.nodes.FirstOrDefault(n => n.guid == kvp.Key);
+                    if (nodeData != null && nodeData.nodeType == "Select")
+                    {
+                        var selectModule = kvp.Value as LibNoise.Operator.Select;
+                        if (selectModule != null)
+                        {
+                            bool needsFallback = false;
+                            try
+                            {
+                                var testA = selectModule[0];
+                                var testB = selectModule[1];
+                                var testControl = selectModule[2];
+                            }
+                            catch (System.ArgumentNullException)
+                            {
+                                needsFallback = true;
+                            }
+                            catch (System.ArgumentOutOfRangeException)
+                            {
+                                needsFallback = true;
+                            }
+                            
+                            if (needsFallback)
+                            {
+                                Debug.LogWarning($"Select module (GUID: {kvp.Key}) is missing one or more input modules! Using default Perlin noise as fallback.");
+                                var defaultInput = new LibNoise.Generator.Perlin();
+                                defaultInput.Frequency = 1.0;
+                                
+                                try { var test = selectModule[0]; } catch { selectModule[0] = defaultInput; }
+                                try { var test = selectModule[1]; } catch { selectModule[1] = defaultInput; }
+                                try { var test = selectModule[2]; } catch { selectModule[2] = defaultInput; }
+                            }
+                        }
+                    }
+                }
+                
+                // Build splat output modules
+                foreach (var splatData in splatOutputs)
+                {
+                    // Use the source node GUID to get the built module
+                    // This could be a Portal Out node, which we just resolved above
+                    if (!string.IsNullOrEmpty(splatData.sourceNodeGuid) && builtModules.TryGetValue(splatData.sourceNodeGuid, out ModuleBase sourceModule))
+                    {
+                        splatData.noiseModule = sourceModule;
+                    }
+                }
+                
+                // Build the heightmap module (for terrain height)
                 heightmapModule = NoiseGraphBuilder.BuildModuleGraph(graphData);
                 
                 if (heightmapModule == null)
@@ -281,6 +565,7 @@ namespace RPGGame.Map
             {
                 Debug.LogError($"Error loading heightmap graph: {e.Message}");
                 CreateDefaultHeightmap();
+                splatOutputs.Clear();
             }
         }
         
@@ -298,6 +583,14 @@ namespace RPGGame.Map
             string worldFolder = Path.Combine(Application.streamingAssetsPath, "Worlds", mapName);
             string graphFile = $"{heightmapGraphName}.json";
             return Path.Combine(worldFolder, graphFile);
+        }
+        
+        private string GetPropertyString(NoiseNodeData nodeData, string key, string defaultValue)
+        {
+            var prop = nodeData.properties?.FirstOrDefault(p => p.key == key);
+            if (prop != null && !string.IsNullOrEmpty(prop.value))
+                return prop.value;
+            return defaultValue;
         }
         
         private void ClearTerrain()

@@ -45,14 +45,22 @@ namespace RPGGame.Map.Editor
             }
             
             // Normalize and convert to colors
-            float range = maxValue - minValue;
-            if (range < 0.0001f) range = 1f; // Avoid division by zero
+            // LibNoise modules typically output values in the range -1.0 to 1.0
+            // We normalize from -1.0 to 1.0 to 0.0 to 1.0 for color values
+            const float noiseMin = -1.0f;
+            const float noiseMax = 1.0f;
+            const float noiseRange = noiseMax - noiseMin; // 2.0
             
             for (int y = 0; y < PreviewSize; y++)
             {
                 for (int x = 0; x < PreviewSize; x++)
                 {
-                    float normalized = (values[x, y] - minValue) / range;
+                    // Normalize from [-1.0, 1.0] to [0.0, 1.0]
+                    // Formula: (value - noiseMin) / noiseRange
+                    // = (value - (-1.0)) / 2.0 = (value + 1.0) / 2.0
+                    float normalized = (values[x, y] - noiseMin) / noiseRange;
+                    // Clamp to ensure valid color range [0.0, 1.0]
+                    normalized = Mathf.Clamp01(normalized);
                     Color color = new Color(normalized, normalized, normalized, 1f);
                     preview.SetPixel(x, y, color);
                 }
