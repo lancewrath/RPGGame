@@ -86,6 +86,12 @@ namespace RPGGame.Map.Editor
             propertyInspector.SetGetPortalNamesCallback(() => {
                 return graphView != null ? graphView.GetPortalNames() : new List<string>();
             });
+            
+            // Set callback to refresh Portal Out validity
+            propertyInspector.SetRefreshPortalOutValidityCallback(() => {
+                if (graphView != null)
+                    graphView.RefreshPortalOutValidity();
+            });
         }
         
         private void GenerateToolbar()
@@ -263,6 +269,15 @@ namespace RPGGame.Map.Editor
             }
         }
         
+        // Method to refresh Portal Out node validity when graph changes
+        public void RefreshPortalOutValidity()
+        {
+            foreach (var node in nodes.ToList().OfType<PortalOutNode>())
+            {
+                node.UpdateValidityStyle();
+            }
+        }
+        
         private void AddManipulators()
         {
             SetupZoom(ContentZoomer.DefaultMinScale, ContentZoomer.DefaultMaxScale);
@@ -294,8 +309,22 @@ namespace RPGGame.Map.Editor
             {
                 var searchWindow = ScriptableObject.CreateInstance<NoiseNodeSearchWindow>();
                 searchWindow.Initialize(this);
-                // Pass the mouse position from the context
-                // context.screenMousePosition is in screen space
+                
+                // Convert the mouse position to graph view coordinates when opening the search window
+                // This ensures we have the correct position even on multi-monitor setups
+                Vector2 screenPos = context.screenMousePosition;
+                var window = EditorWindow.focusedWindow;
+                
+                if (window != null)
+                {
+                    var windowRoot = window.rootVisualElement;
+                    // Convert screen to window root's parent coordinate space (same as ShaderGraph)
+                    Vector2 windowMousePosition = windowRoot.ChangeCoordinatesTo(windowRoot.parent, screenPos);
+                    // Store this converted position for use in OnSelectEntry
+                    searchWindow.SetMousePosition(windowMousePosition);
+                }
+                
+                // Pass the original screen mouse position (SearchWindow expects screen coordinates)
                 SearchWindow.Open(new SearchWindowContext(context.screenMousePosition), searchWindow);
             };
         }
@@ -385,6 +414,10 @@ namespace RPGGame.Map.Editor
                 }
             }
             
+            // Refresh Portal Out node validity after all nodes are loaded
+            // (in case Portal In nodes are loaded after Portal Out nodes that reference them)
+            RefreshPortalOutValidity();
+            
             // Create edges
             foreach (var edgeData in graphData.edges)
             {
@@ -421,6 +454,7 @@ namespace RPGGame.Map.Editor
                 case "Power": return new PowerNode();
                 case "Abs": return new AbsNode();
                 case "Invert": return new InvertNode();
+                case "Clamp": return new ClampNode();
                 case "Select": return new SelectNode();
                 case "Curve": return new CurveNode();
                 case "Slope": return new SlopeNode();
@@ -437,6 +471,7 @@ namespace RPGGame.Map.Editor
     {
         private NoiseGraphView graphView;
         private Texture2D indentationIcon;
+        private Vector2? cachedMousePosition; // Store converted mouse position
         
         public void Initialize(NoiseGraphView graphView)
         {
@@ -444,6 +479,11 @@ namespace RPGGame.Map.Editor
             indentationIcon = new Texture2D(1, 1);
             indentationIcon.SetPixel(0, 0, new Color(0, 0, 0, 0));
             indentationIcon.Apply();
+        }
+        
+        public void SetMousePosition(Vector2 windowMousePosition)
+        {
+            cachedMousePosition = windowMousePosition;
         }
         
         public List<SearchTreeEntry> CreateSearchTree(SearchWindowContext context)
@@ -518,6 +558,11 @@ namespace RPGGame.Map.Editor
                     level = 2,
                     userData = typeof(InvertNode)
                 },
+                new SearchTreeEntry(new GUIContent("Clamp", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(ClampNode)
+                },
                 new SearchTreeEntry(new GUIContent("Select", indentationIcon))
                 {
                     level = 2,
@@ -563,24 +608,30 @@ namespace RPGGame.Map.Editor
         public bool OnSelectEntry(SearchTreeEntry searchTreeEntry, SearchWindowContext context)
         {
             var window = EditorWindow.focusedWindow;
-            if (window == null) return false;
+            if (window == null || graphView == null) return false;
             
-            // Convert screen position to graph view local coordinates
-            // Following Unity's ShaderGraph implementation exactly (SearchWindowProvider.cs line 396-397)
-            var windowRoot = window.rootVisualElement;
+            Vector2 windowMousePosition;
             
-            // screenMousePosition - ShaderGraph uses it directly without subtracting window position
-            // This suggests it's already in the right coordinate space or ChangeCoordinatesTo handles it
-            Vector2 screenPos = context.screenMousePosition;
-            
-            // Convert to window root's parent coordinate space
-            // This matches ShaderGraph exactly: windowRoot.ChangeCoordinatesTo(windowRoot.parent, screenMousePosition)
-            Vector2 windowMousePosition = windowRoot.ChangeCoordinatesTo(windowRoot.parent, screenPos);
+            // Use cached mouse position if available (converted when search window opened)
+            // Otherwise fall back to converting from screen coordinates
+            if (cachedMousePosition.HasValue)
+            {
+                windowMousePosition = cachedMousePosition.Value;
+            }
+            else
+            {
+                // Fallback: convert screen coordinates (original approach)
+                var windowRoot = window.rootVisualElement;
+                Vector2 screenPos = context.screenMousePosition;
+                windowMousePosition = windowRoot.ChangeCoordinatesTo(windowRoot.parent, screenPos);
+            }
             
             // Convert to contentViewContainer local coordinates
             // WorldToLocal automatically accounts for the view transform (zoom/pan)
-            // ShaderGraph uses: m_GraphView.contentViewContainer.WorldToLocal(windowMousePosition)
             Vector2 graphLocalPos = graphView.contentViewContainer.WorldToLocal(windowMousePosition);
+            
+            // Clear cached position after use
+            cachedMousePosition = null;
             
             NoiseGraphNode node = null;
             Type nodeType = searchTreeEntry.userData as Type;
@@ -611,6 +662,8 @@ namespace RPGGame.Map.Editor
                 node = new AbsNode();
             else if (nodeType == typeof(InvertNode))
                 node = new InvertNode();
+            else if (nodeType == typeof(ClampNode))
+                node = new ClampNode();
             else if (nodeType == typeof(SelectNode))
                 node = new SelectNode();
             else if (nodeType == typeof(CurveNode))

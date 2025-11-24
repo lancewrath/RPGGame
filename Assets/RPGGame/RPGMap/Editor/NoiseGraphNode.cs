@@ -32,7 +32,7 @@ namespace RPGGame.Map.Editor
         private VisualElement previewContainer;
         private Image previewImage;
         private bool previewExpanded = false;
-        private NoiseGraphView graphView;
+        protected NoiseGraphView graphView;
         
         public bool HasPreview => NodeType == "Perlin" || NodeType == "Billow" || NodeType == "RidgedMultifractal" || NodeType == "Const" || NodeType == "Curve";
         
@@ -52,6 +52,12 @@ namespace RPGGame.Map.Editor
         public void InitializePreview(NoiseGraphView graphView)
         {
             this.graphView = graphView;
+            
+            // Update Portal Out node validity if this is a Portal Out node
+            if (this is PortalOutNode portalOutNode)
+            {
+                portalOutNode.UpdateValidityStyle();
+            }
             
             if (!HasPreview)
                 return;

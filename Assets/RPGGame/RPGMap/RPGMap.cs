@@ -482,11 +482,20 @@ namespace RPGGame.Map
                 }
                 
                 // Connect edges FROM Portal Out nodes (now that Portal Out modules are built)
+                // Only connect edges FROM Portal Out nodes that were successfully resolved
                 foreach (var edge in graphData.edges)
                 {
                     var outputNode = graphData.nodes.FirstOrDefault(n => n.guid == edge.outputNodeGuid);
                     if (outputNode != null && outputNode.nodeType == "Portal Out")
                     {
+                        // Skip if the Portal Out node wasn't successfully resolved (not in builtModules)
+                        if (!builtModules.ContainsKey(edge.outputNodeGuid))
+                        {
+                            // Portal Out node couldn't be resolved (empty name, missing portal, etc.)
+                            // Skip this edge - the input module will get a fallback during validation
+                            continue;
+                        }
+                        
                         var inputNode = graphData.nodes.FirstOrDefault(n => n.guid == edge.inputNodeGuid);
                         if (inputNode != null && (inputNode.nodeType == "Output" || inputNode.nodeType == "SplatOutput"))
                             continue;

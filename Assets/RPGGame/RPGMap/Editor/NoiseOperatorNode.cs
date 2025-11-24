@@ -111,6 +111,41 @@ namespace RPGGame.Map.Editor
         }
     }
     
+    public class ClampNode : NoiseGraphNode
+    {
+        public double minimum = -1.0;
+        public double maximum = 1.0;
+        
+        public ClampNode() : base("Clamp", "Clamp")
+        {
+            CreateInputPort("Input");
+            CreateOutputPort("Output");
+            RefreshExpandedState();
+            RefreshPorts();
+        }
+        
+        protected override List<NoisePropertyData> GetSerializedProperties()
+        {
+            return new List<NoisePropertyData>
+            {
+                new NoisePropertyData { key = "minimum", value = minimum.ToString(), valueType = "double" },
+                new NoisePropertyData { key = "maximum", value = maximum.ToString(), valueType = "double" }
+            };
+        }
+        
+        protected override void DeserializeProperties(List<NoisePropertyData> properties)
+        {
+            foreach (var prop in properties)
+            {
+                switch (prop.key)
+                {
+                    case "minimum": double.TryParse(prop.value, out minimum); break;
+                    case "maximum": double.TryParse(prop.value, out maximum); break;
+                }
+            }
+        }
+    }
+    
     public class SelectNode : NoiseGraphNode
     {
         public double minimum = -1.0;
@@ -388,6 +423,44 @@ namespace RPGGame.Map.Editor
             RefreshExpandedState();
             RefreshPorts();
             AddToClassList("portal-out-node");
+            UpdateValidityStyle();
+        }
+        
+        public void UpdateValidityStyle()
+        {
+            // Check if portal name is valid
+            bool isValid = !string.IsNullOrEmpty(selectedPortalName);
+            
+            // If we have a graph view, check if the portal actually exists
+            if (isValid && graphView != null)
+            {
+                var portalNames = graphView.GetPortalNames();
+                isValid = portalNames.Contains(selectedPortalName);
+            }
+            
+            // Apply red border style if invalid
+            if (isValid)
+            {
+                RemoveFromClassList("portal-out-invalid");
+                // Remove red border
+                style.borderTopWidth = 0;
+                style.borderBottomWidth = 0;
+                style.borderLeftWidth = 0;
+                style.borderRightWidth = 0;
+            }
+            else
+            {
+                AddToClassList("portal-out-invalid");
+                // Add red border (2px solid red)
+                style.borderTopWidth = 2;
+                style.borderBottomWidth = 2;
+                style.borderLeftWidth = 2;
+                style.borderRightWidth = 2;
+                style.borderTopColor = Color.red;
+                style.borderBottomColor = Color.red;
+                style.borderLeftColor = Color.red;
+                style.borderRightColor = Color.red;
+            }
         }
         
         protected override List<NoisePropertyData> GetSerializedProperties()
@@ -407,6 +480,7 @@ namespace RPGGame.Map.Editor
                     selectedPortalName = prop.value ?? "";
                 }
             }
+            UpdateValidityStyle();
         }
     }
 }

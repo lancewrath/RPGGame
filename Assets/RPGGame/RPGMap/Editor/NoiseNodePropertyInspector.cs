@@ -13,6 +13,7 @@ namespace RPGGame.Map.Editor
         private ScrollView scrollView;
         private VisualElement contentContainer;
         private System.Func<List<string>> getPortalNamesCallback;
+        private System.Action refreshPortalOutValidityCallback;
         
         public NoiseNodePropertyInspector()
         {
@@ -51,6 +52,16 @@ namespace RPGGame.Map.Editor
             getPortalNamesCallback = callback;
         }
         
+        public void SetRefreshPortalOutValidityCallback(System.Action callback)
+        {
+            refreshPortalOutValidityCallback = callback;
+        }
+        
+        private void RefreshPortalOutValidity()
+        {
+            refreshPortalOutValidityCallback?.Invoke();
+        }
+        
         public void UpdateSelection(NoiseGraphNode node)
         {
             currentNode = node;
@@ -85,6 +96,9 @@ namespace RPGGame.Map.Editor
                     break;
                 case "Const":
                     CreateConstProperties(node as ConstNoiseNode);
+                    break;
+                case "Clamp":
+                    CreateClampProperties(node as ClampNode);
                     break;
                 case "Select":
                     CreateSelectProperties(node as SelectNode);
@@ -224,6 +238,20 @@ namespace RPGGame.Map.Editor
             container.Add(field);
             
             contentContainer.Add(container);
+        }
+        
+        private void CreateClampProperties(ClampNode node)
+        {
+            if (node == null) return;
+            
+            AddDoubleField("Minimum", node.minimum, (val) => {
+                node.minimum = val;
+                currentNode?.NotifyNodeChanged();
+            });
+            AddDoubleField("Maximum", node.maximum, (val) => {
+                node.maximum = val;
+                currentNode?.NotifyNodeChanged();
+            });
         }
         
         private void CreateSelectProperties(SelectNode node)
@@ -905,6 +933,8 @@ namespace RPGGame.Map.Editor
             AddStringField("Portal Name", node.portalName, (val) => {
                 node.portalName = val;
                 currentNode?.NotifyNodeChanged();
+                // Refresh all Portal Out nodes when a Portal In name changes
+                RefreshPortalOutValidity();
             });
             
             var helpText = new Label("Enter a unique name for this portal. Portal Out nodes can reference this portal by name.");
@@ -943,6 +973,7 @@ namespace RPGGame.Map.Editor
                 portalNames.Contains(node.selectedPortalName) ? node.selectedPortalName : "");
             popupField.RegisterValueChangedCallback(evt => {
                 node.selectedPortalName = evt.newValue;
+                node.UpdateValidityStyle();
                 currentNode?.NotifyNodeChanged();
             });
             container.Add(popupField);

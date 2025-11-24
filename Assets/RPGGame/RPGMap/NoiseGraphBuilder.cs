@@ -154,8 +154,17 @@ namespace RPGGame.Map
             }
             
             // Fifth pass: Connect edges FROM Portal Out nodes (now that Portal Out modules are built)
+            // Only connect edges FROM Portal Out nodes that were successfully resolved
             foreach (var edge in portalOutEdges)
             {
+                // Skip if the Portal Out node wasn't successfully resolved (not in builtModules)
+                if (!builtModules.ContainsKey(edge.outputNodeGuid))
+                {
+                    // Portal Out node couldn't be resolved (empty name, missing portal, etc.)
+                    // Skip this edge - the input module will get a fallback during validation
+                    continue;
+                }
+                
                 var inputNode = graphData.nodes.FirstOrDefault(n => n.guid == edge.inputNodeGuid);
                 if (inputNode != null && (inputNode.nodeType == "Output" || inputNode.nodeType == "SplatOutput"))
                     continue;
@@ -174,10 +183,6 @@ namespace RPGGame.Map
                 }
                 else
                 {
-                    if (!builtModules.ContainsKey(edge.outputNodeGuid))
-                    {
-                        Debug.LogWarning($"Cannot connect Portal Out module: Portal Out module not found (GUID: {edge.outputNodeGuid})");
-                    }
                     if (!builtModules.ContainsKey(edge.inputNodeGuid))
                     {
                         Debug.LogWarning($"Cannot connect Portal Out module: input module not found (GUID: {edge.inputNodeGuid})");
@@ -377,9 +382,9 @@ namespace RPGGame.Map
             return scaleBias;
         }
         
-        private static Clamp CreateClamp(NoiseNodeData nodeData)
+        private static LibNoise.Operator.Clamp CreateClamp(NoiseNodeData nodeData)
         {
-            var clamp = new Clamp();
+            var clamp = new LibNoise.Operator.Clamp();
             clamp.Minimum = GetPropertyDouble(nodeData, "minimum", -1.0);
             clamp.Maximum = GetPropertyDouble(nodeData, "maximum", 1.0);
             return clamp;
