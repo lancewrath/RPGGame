@@ -77,8 +77,16 @@ namespace RPGGame.Map.Editor
             return preview;
         }
         
-        private static ModuleBase BuildNodeModule(NoiseGraphNode node, NoiseGraphView graphView)
+        private static ModuleBase BuildNodeModule(NoiseGraphNode node, NoiseGraphView graphView, System.Collections.Generic.HashSet<string> visitedNodes = null)
         {
+            if (visitedNodes == null)
+                visitedNodes = new System.Collections.Generic.HashSet<string>();
+            
+            // Prevent infinite recursion
+            if (visitedNodes.Contains(node.NodeGuid))
+                return null;
+            visitedNodes.Add(node.NodeGuid);
+            
             // For now, build a simple module for generator nodes
             // For operator nodes, we'd need to build the full graph up to this node
             switch (node.NodeType)
@@ -137,12 +145,34 @@ namespace RPGGame.Map.Editor
                     var curveNode = node as CurveNode;
                     if (curveNode != null)
                     {
-                        // For preview, we need an input to the curve
-                        // Use a simple Perlin noise as input
-                        var perlin = new LibNoise.Generator.Perlin();
-                        perlin.Frequency = 1.0;
+                        // Try to get the connected input module
+                        ModuleBase inputModule = null;
+                        if (node.InputPorts.Count > 0)
+                        {
+                            var inputPort = node.InputPorts[0];
+                            var connections = inputPort.connections;
+                            if (connections != null)
+                            {
+                                foreach (var edge in connections)
+                                {
+                                    if (edge.output != null && edge.output.node is NoiseGraphNode outputNode)
+                                    {
+                                        inputModule = BuildNodeModule(outputNode, graphView, visitedNodes);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
                         
-                        var curve = new LibNoise.Operator.Curve(perlin);
+                        // Fallback to Perlin if no input is connected
+                        if (inputModule == null)
+                        {
+                            var perlin = new LibNoise.Generator.Perlin();
+                            perlin.Frequency = 1.0;
+                            inputModule = perlin;
+                        }
+                        
+                        var curve = new LibNoise.Operator.Curve(inputModule);
                         
                         // Convert AnimationCurve to LibNoise control points
                         // LibNoise Curve.Add(inputValue, outputValue):

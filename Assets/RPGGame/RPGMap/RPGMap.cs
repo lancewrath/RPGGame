@@ -301,9 +301,10 @@ namespace RPGGame.Map
                         if (splatOutputs[i].noiseModule != null)
                         {
                             double noiseValue = splatOutputs[i].noiseModule.GetValue(worldX, 0, worldZ);
-                            // Normalize from [-1,1] to [0,1] and use as weight
+                            // Remap from [-1,1] to [0,1] using linear interpolation
+                            // Formula: (value - min) / (max - min) = (value - (-1)) / (1 - (-1)) = (value + 1) / 2
                             float weight = (float)((noiseValue + 1.0) * 0.5);
-                            // Clamp to [0,1]
+                            // Clamp to [0,1] to ensure valid range
                             weight = Mathf.Clamp01(weight);
                             values[i] = weight;
                             sum += weight;
