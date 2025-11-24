@@ -68,7 +68,9 @@ namespace RPGGame.Map
             {
                 for (int x = 0; x < heightmapSize; x++)
                 {
-                    // Normalize from [-1,1] to [0,1]
+                    // Linear lerp from [-1,1] to [0,1]: output = (input - min) / (max - min)
+                    // Formula: (noiseValue - (-1)) / (1 - (-1)) = (noiseValue + 1) / 2 = (noiseValue + 1.0) * 0.5
+                    // This ensures: -1 → 0, 0 → 0.5, 1 → 1.0 (linear mapping, no clamping)
                     float height = (float)((noiseValues[z, x] + 1.0) * 0.5);
                     heights[z, x] = height;
                 }
@@ -136,26 +138,39 @@ namespace RPGGame.Map
             {
                 for (int x = 0; x < alphamapResolution; x++)
                 {
-                    // Get noise values for each splat output
-                    float[] values = new float[splatOutputs.Count];
-                    float sum = 0f;
+                    // Priority-based blending: later layers (higher orderId) take priority over earlier layers
+                    // Process layers in order, using alpha compositing where later layers can overwrite earlier ones
+                    float[] layerAlphas = new float[splatOutputs.Count];
+                    float remainingAlpha = 1.0f; // Track how much alpha is still available
                     
                     for (int i = 0; i < splatOutputs.Count; i++)
                     {
                         // Remap from [-1,1] to [0,1]
-                        float weight = (float)((noiseValues[z, x, i] + 1.0) * 0.5);
-                        weight = Mathf.Clamp01(weight);
-                        values[i] = weight;
-                        sum += weight;
+                        float normalizedWeight = (float)((noiseValues[z, x, i] + 1.0) * 0.5);
+                        normalizedWeight = Mathf.Clamp01(normalizedWeight);
+                        
+                        // This layer's alpha is its weight, but limited by remaining alpha
+                        // Later layers with strong values will take priority
+                        float weight = normalizedWeight * remainingAlpha;
+                        layerAlphas[i] = weight;
+                        
+                        // Reduce remaining alpha for next layers (alpha compositing)
+                        // Later layers can only contribute what's left after earlier layers
+                        remainingAlpha = Mathf.Max(0f, remainingAlpha - weight);
                     }
                     
-                    // Normalize weights so they sum to 1
-                    if (sum > 0.0001f)
+                    // Normalize to ensure they sum to 1 (Unity terrain requirement)
+                    float totalAlpha = 0f;
+                    for (int i = 0; i < splatOutputs.Count; i++)
+                    {
+                        totalAlpha += layerAlphas[i];
+                    }
+                    
+                    if (totalAlpha > 0.0001f)
                     {
                         for (int i = 0; i < splatOutputs.Count; i++)
                         {
-                            values[i] /= sum;
-                            alphamaps[z, x, i] = values[i];
+                            alphamaps[z, x, i] = layerAlphas[i] / totalAlpha;
                         }
                     }
                     else
