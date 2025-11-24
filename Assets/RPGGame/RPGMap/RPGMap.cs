@@ -21,6 +21,9 @@ namespace RPGGame.Map
         [SerializeField] private Material terrainMaterial;
         [SerializeField] private PhysicsMaterial terrainPhysicMaterial;
         
+        [Header("Performance Settings")]
+        [SerializeField] private bool useMultithreading = true;
+        
         private Dictionary<Vector2Int, GameObject> terrainTiles = new Dictionary<Vector2Int, GameObject>();
         private ModuleBase heightmapModule;
         private Transform tilesParent;
@@ -276,61 +279,77 @@ namespace RPGGame.Map
             terrainData.terrainLayers = terrainLayers.ToArray();
             
             // Generate splat maps from noise modules
-            float[,,] alphamaps = new float[alphamapResolution, alphamapResolution, splatOutputs.Count];
+            float[,,] alphamaps;
             
-            double offsetX = tileX * tileSize.x;
-            double offsetZ = tileZ * tileSize.z;
-            
-            for (int x = 0; x < alphamapResolution; x++)
+            if (useMultithreading)
             {
-                for (int z = 0; z < alphamapResolution; z++)
+                alphamaps = TerrainGenerationParallel.GenerateSplatMapsParallel(
+                    splatOutputs,
+                    tileX,
+                    tileZ,
+                    alphamapResolution,
+                    tileSize
+                );
+            }
+            else
+            {
+                // Fallback to sequential generation
+                alphamaps = new float[alphamapResolution, alphamapResolution, splatOutputs.Count];
+                
+                double offsetX = tileX * tileSize.x;
+                double offsetZ = tileZ * tileSize.z;
+                
+                for (int x = 0; x < alphamapResolution; x++)
                 {
-                    // Convert to world coordinates
-                    double normalizedX = (double)x / (alphamapResolution - 1);
-                    double normalizedZ = (double)z / (alphamapResolution - 1);
-                    
-                    double worldX = offsetX + normalizedX * tileSize.x;
-                    double worldZ = offsetZ + normalizedZ * tileSize.z;
-                    
-                    // Get noise values for each splat output
-                    float[] values = new float[splatOutputs.Count];
-                    float sum = 0f;
-                    
-                    for (int i = 0; i < splatOutputs.Count; i++)
+                    for (int z = 0; z < alphamapResolution; z++)
                     {
-                        if (splatOutputs[i].noiseModule != null)
+                        // Convert to world coordinates
+                        double normalizedX = (double)x / (alphamapResolution - 1);
+                        double normalizedZ = (double)z / (alphamapResolution - 1);
+                        
+                        double worldX = offsetX + normalizedX * tileSize.x;
+                        double worldZ = offsetZ + normalizedZ * tileSize.z;
+                        
+                        // Get noise values for each splat output
+                        float[] values = new float[splatOutputs.Count];
+                        float sum = 0f;
+                        
+                        for (int i = 0; i < splatOutputs.Count; i++)
                         {
-                            double noiseValue = splatOutputs[i].noiseModule.GetValue(worldX, 0, worldZ);
-                            // Remap from [-1,1] to [0,1] using linear interpolation
-                            // Formula: (value - min) / (max - min) = (value - (-1)) / (1 - (-1)) = (value + 1) / 2
-                            float weight = (float)((noiseValue + 1.0) * 0.5);
-                            // Clamp to [0,1] to ensure valid range
-                            weight = Mathf.Clamp01(weight);
-                            values[i] = weight;
-                            sum += weight;
+                            if (splatOutputs[i].noiseModule != null)
+                            {
+                                double noiseValue = splatOutputs[i].noiseModule.GetValue(worldX, 0, worldZ);
+                                // Remap from [-1,1] to [0,1] using linear interpolation
+                                // Formula: (value - min) / (max - min) = (value - (-1)) / (1 - (-1)) = (value + 1) / 2
+                                float weight = (float)((noiseValue + 1.0) * 0.5);
+                                // Clamp to [0,1] to ensure valid range
+                                weight = Mathf.Clamp01(weight);
+                                values[i] = weight;
+                                sum += weight;
+                            }
+                            else
+                            {
+                                values[i] = 0f;
+                            }
+                        }
+                        
+                        // Normalize weights so they sum to 1
+                        if (sum > 0.0001f)
+                        {
+                            for (int i = 0; i < splatOutputs.Count; i++)
+                            {
+                                values[i] /= sum;
+                                alphamaps[z, x, i] = values[i];
+                            }
                         }
                         else
                         {
-                            values[i] = 0f;
-                        }
-                    }
-                    
-                    // Normalize weights so they sum to 1
-                    if (sum > 0.0001f)
-                    {
-                        for (int i = 0; i < splatOutputs.Count; i++)
-                        {
-                            values[i] /= sum;
-                            alphamaps[z, x, i] = values[i];
-                        }
-                    }
-                    else
-                    {
-                        // If no weights, distribute evenly
-                        float evenWeight = 1f / splatOutputs.Count;
-                        for (int i = 0; i < splatOutputs.Count; i++)
-                        {
-                            alphamaps[z, x, i] = evenWeight;
+                            // If no weights, distribute evenly
+                            float evenWeight = 1f / splatOutputs.Count;
+                            for (int i = 0; i < splatOutputs.Count; i++)
+                            {
+                                alphamaps[z, x, i] = evenWeight;
+                            }
                         }
                     }
                 }
@@ -358,13 +377,27 @@ namespace RPGGame.Map
         
         private float[,] GenerateHeightmap(int tileX, int tileZ, int heightmapSize)
         {
-            float[,] heights = new float[heightmapSize, heightmapSize];
-            
             if (heightmapModule == null)
             {
                 Debug.LogWarning("Heightmap module is null. Using flat terrain.");
-                return heights;
+                return new float[heightmapSize, heightmapSize];
             }
+            
+            // Use parallel generation if enabled
+            if (useMultithreading)
+            {
+                return TerrainGenerationParallel.GenerateHeightmapParallel(
+                    heightmapModule,
+                    tileX,
+                    tileZ,
+                    heightmapSize,
+                    heightmapResolution,
+                    tileSize
+                );
+            }
+            
+            // Fallback to sequential generation
+            float[,] heights = new float[heightmapSize, heightmapSize];
             
             // Calculate the world position offset for this tile
             double offsetX = tileX * tileSize.x;
