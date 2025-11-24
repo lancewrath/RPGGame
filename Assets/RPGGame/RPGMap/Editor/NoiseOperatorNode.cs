@@ -111,6 +111,96 @@ namespace RPGGame.Map.Editor
         }
     }
     
+    public class NormalizeNode : NoiseGraphNode
+    {
+        public NormalizeNode() : base("Normalize", "Normalize")
+        {
+            CreateInputPort("Input");
+            CreateOutputPort("Output");
+            RefreshExpandedState();
+            RefreshPorts();
+        }
+    }
+    
+    public class ErosionNode : NoiseGraphNode
+    {
+        public double intensity = 0.5;
+        public double iterations = 1.0;
+        public double sampleDistance = 1.0;
+        
+        public ErosionNode() : base("Erosion", "Erosion")
+        {
+            CreateInputPort("Input");
+            CreateOutputPort("Output");
+            RefreshExpandedState();
+            RefreshPorts();
+        }
+        
+        protected override List<NoisePropertyData> GetSerializedProperties()
+        {
+            return new List<NoisePropertyData>
+            {
+                new NoisePropertyData { key = "intensity", value = intensity.ToString(), valueType = "double" },
+                new NoisePropertyData { key = "iterations", value = iterations.ToString(), valueType = "double" },
+                new NoisePropertyData { key = "sampleDistance", value = sampleDistance.ToString(), valueType = "double" }
+            };
+        }
+        
+        protected override void DeserializeProperties(List<NoisePropertyData> properties)
+        {
+            foreach (var prop in properties)
+            {
+                switch (prop.key)
+                {
+                    case "intensity": double.TryParse(prop.value, out intensity); break;
+                    case "iterations": double.TryParse(prop.value, out iterations); break;
+                    case "sampleDistance": double.TryParse(prop.value, out sampleDistance); break;
+                }
+            }
+        }
+    }
+    
+    public class BeachNode : NoiseGraphNode
+    {
+        public double waterLevel = 0.0;
+        public double beachSize = 0.1;
+        public double beachHeight = 0.05;
+        public double smoothRange = 0.02;
+        
+        public BeachNode() : base("Beach", "Beach")
+        {
+            CreateInputPort("Input");
+            CreateOutputPort("Output");
+            RefreshExpandedState();
+            RefreshPorts();
+        }
+        
+        protected override List<NoisePropertyData> GetSerializedProperties()
+        {
+            return new List<NoisePropertyData>
+            {
+                new NoisePropertyData { key = "waterLevel", value = waterLevel.ToString(), valueType = "double" },
+                new NoisePropertyData { key = "beachSize", value = beachSize.ToString(), valueType = "double" },
+                new NoisePropertyData { key = "beachHeight", value = beachHeight.ToString(), valueType = "double" },
+                new NoisePropertyData { key = "smoothRange", value = smoothRange.ToString(), valueType = "double" }
+            };
+        }
+        
+        protected override void DeserializeProperties(List<NoisePropertyData> properties)
+        {
+            foreach (var prop in properties)
+            {
+                switch (prop.key)
+                {
+                    case "waterLevel": double.TryParse(prop.value, out waterLevel); break;
+                    case "beachSize": double.TryParse(prop.value, out beachSize); break;
+                    case "beachHeight": double.TryParse(prop.value, out beachHeight); break;
+                    case "smoothRange": double.TryParse(prop.value, out smoothRange); break;
+                }
+            }
+        }
+    }
+    
     public class ClampNode : NoiseGraphNode
     {
         public double minimum = -1.0;

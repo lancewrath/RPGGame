@@ -306,6 +306,12 @@ namespace RPGGame.Map
                     return new Abs();
                 case "Invert":
                     return new Invert();
+                case "Normalize":
+                    return new LibNoise.Operator.Normalize();
+                case "Erosion":
+                    return CreateErosion(nodeData);
+                case "Beach":
+                    return CreateBeach(nodeData);
                 case "Select":
                     return CreateSelect(nodeData);
                 case "Curve":
@@ -388,6 +394,25 @@ namespace RPGGame.Map
             clamp.Minimum = GetPropertyDouble(nodeData, "minimum", -1.0);
             clamp.Maximum = GetPropertyDouble(nodeData, "maximum", 1.0);
             return clamp;
+        }
+        
+        private static LibNoise.Operator.Erosion CreateErosion(NoiseNodeData nodeData)
+        {
+            var erosion = new LibNoise.Operator.Erosion();
+            erosion.Intensity = GetPropertyDouble(nodeData, "intensity", 0.5);
+            erosion.Iterations = GetPropertyDouble(nodeData, "iterations", 1.0);
+            erosion.SampleDistance = GetPropertyDouble(nodeData, "sampleDistance", 1.0);
+            return erosion;
+        }
+        
+        private static LibNoise.Operator.Beach CreateBeach(NoiseNodeData nodeData)
+        {
+            var beach = new LibNoise.Operator.Beach();
+            beach.WaterLevel = GetPropertyDouble(nodeData, "waterLevel", 0.0);
+            beach.BeachSize = GetPropertyDouble(nodeData, "beachSize", 0.1);
+            beach.BeachHeight = GetPropertyDouble(nodeData, "beachHeight", 0.05);
+            beach.SmoothRange = GetPropertyDouble(nodeData, "smoothRange", 0.02);
+            return beach;
         }
         
         private static LibNoise.Operator.Select CreateSelect(NoiseNodeData nodeData)

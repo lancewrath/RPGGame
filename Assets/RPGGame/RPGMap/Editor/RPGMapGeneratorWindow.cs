@@ -454,6 +454,9 @@ namespace RPGGame.Map.Editor
                 case "Power": return new PowerNode();
                 case "Abs": return new AbsNode();
                 case "Invert": return new InvertNode();
+                case "Normalize": return new NormalizeNode();
+                case "Erosion": return new ErosionNode();
+                case "Beach": return new BeachNode();
                 case "Clamp": return new ClampNode();
                 case "Select": return new SelectNode();
                 case "Curve": return new CurveNode();
@@ -557,6 +560,21 @@ namespace RPGGame.Map.Editor
                 {
                     level = 2,
                     userData = typeof(InvertNode)
+                },
+                new SearchTreeEntry(new GUIContent("Normalize", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(NormalizeNode)
+                },
+                new SearchTreeEntry(new GUIContent("Erosion", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(ErosionNode)
+                },
+                new SearchTreeEntry(new GUIContent("Beach", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(BeachNode)
                 },
                 new SearchTreeEntry(new GUIContent("Clamp", indentationIcon))
                 {
@@ -662,6 +680,12 @@ namespace RPGGame.Map.Editor
                 node = new AbsNode();
             else if (nodeType == typeof(InvertNode))
                 node = new InvertNode();
+            else if (nodeType == typeof(NormalizeNode))
+                node = new NormalizeNode();
+            else if (nodeType == typeof(ErosionNode))
+                node = new ErosionNode();
+            else if (nodeType == typeof(BeachNode))
+                node = new BeachNode();
             else if (nodeType == typeof(ClampNode))
                 node = new ClampNode();
             else if (nodeType == typeof(SelectNode))

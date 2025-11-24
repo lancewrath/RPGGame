@@ -100,6 +100,12 @@ namespace RPGGame.Map.Editor
                 case "Clamp":
                     CreateClampProperties(node as ClampNode);
                     break;
+                case "Erosion":
+                    CreateErosionProperties(node as ErosionNode);
+                    break;
+                case "Beach":
+                    CreateBeachProperties(node as BeachNode);
+                    break;
                 case "Select":
                     CreateSelectProperties(node as SelectNode);
                     break;
@@ -250,6 +256,46 @@ namespace RPGGame.Map.Editor
             });
             AddDoubleField("Maximum", node.maximum, (val) => {
                 node.maximum = val;
+                currentNode?.NotifyNodeChanged();
+            });
+        }
+        
+        private void CreateErosionProperties(ErosionNode node)
+        {
+            if (node == null) return;
+            
+            AddDoubleField("Intensity", node.intensity, (val) => {
+                node.intensity = val;
+                currentNode?.NotifyNodeChanged();
+            });
+            AddDoubleField("Iterations", node.iterations, (val) => {
+                node.iterations = val;
+                currentNode?.NotifyNodeChanged();
+            });
+            AddDoubleField("Sample Distance", node.sampleDistance, (val) => {
+                node.sampleDistance = val;
+                currentNode?.NotifyNodeChanged();
+            });
+        }
+        
+        private void CreateBeachProperties(BeachNode node)
+        {
+            if (node == null) return;
+            
+            AddDoubleField("Water Level", node.waterLevel, (val) => {
+                node.waterLevel = val;
+                currentNode?.NotifyNodeChanged();
+            });
+            AddDoubleField("Beach Size", node.beachSize, (val) => {
+                node.beachSize = val;
+                currentNode?.NotifyNodeChanged();
+            });
+            AddDoubleField("Beach Height", node.beachHeight, (val) => {
+                node.beachHeight = val;
+                currentNode?.NotifyNodeChanged();
+            });
+            AddDoubleField("Smooth Range", node.smoothRange, (val) => {
+                node.smoothRange = val;
                 currentNode?.NotifyNodeChanged();
             });
         }
