@@ -504,6 +504,48 @@ namespace RPGGame.Map.Editor
     }
     
     /// <summary>
+    /// Height Selector node - outputs the input value only if it falls within a specified height range.
+    /// Values outside the range output 0. Useful for height-based splatting (e.g., snow on mountain tops, underwater areas).
+    /// </summary>
+    public class HeightSelectorNode : NoiseGraphNode
+    {
+        public double minHeight = -1.0;
+        public double maxHeight = 1.0;
+        
+        public HeightSelectorNode() : base("Height Selector", "Height Selector")
+        {
+            CreateInputPort("Input");
+            CreateOutputPort("Output");
+            RefreshExpandedState();
+            RefreshPorts();
+        }
+        
+        protected override List<NoisePropertyData> GetSerializedProperties()
+        {
+            return new List<NoisePropertyData>
+            {
+                new NoisePropertyData { key = "minHeight", value = minHeight.ToString(), valueType = "double" },
+                new NoisePropertyData { key = "maxHeight", value = maxHeight.ToString(), valueType = "double" }
+            };
+        }
+        
+        protected override void DeserializeProperties(List<NoisePropertyData> properties)
+        {
+            foreach (var prop in properties)
+            {
+                if (prop.key == "minHeight")
+                {
+                    double.TryParse(prop.value, out minHeight);
+                }
+                else if (prop.key == "maxHeight")
+                {
+                    double.TryParse(prop.value, out maxHeight);
+                }
+            }
+        }
+    }
+    
+    /// <summary>
     /// Cache node - caches a 2D preview of the input module for faster preview generation.
     /// Use the "Generate Cache" button in the property inspector to generate the cache.
     /// </summary>

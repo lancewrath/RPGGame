@@ -106,6 +106,9 @@ namespace RPGGame.Map.Editor
                 case "Clamp":
                     CreateClampProperties(node as ClampNode);
                     break;
+                case "Height Selector":
+                    CreateHeightSelectorProperties(node as HeightSelectorNode);
+                    break;
                 case "Erosion":
                     CreateErosionProperties(node as ErosionNode);
                     break;
@@ -270,6 +273,28 @@ namespace RPGGame.Map.Editor
                 node.maximum = val;
                 currentNode?.NotifyNodeChanged();
             });
+        }
+        
+        private void CreateHeightSelectorProperties(HeightSelectorNode node)
+        {
+            if (node == null) return;
+            
+            AddDoubleField("Min Height", node.minHeight, (val) => {
+                node.minHeight = val;
+                currentNode?.NotifyNodeChanged();
+            });
+            AddDoubleField("Max Height", node.maxHeight, (val) => {
+                node.maxHeight = val;
+                currentNode?.NotifyNodeChanged();
+            });
+            
+            // Add help text
+            var helpText = new Label("Outputs the input value only if it falls within the height range. Values outside the range output 0. Useful for height-based splatting (e.g., snow on mountain tops, underwater areas).");
+            helpText.style.fontSize = 11;
+            helpText.style.color = new Color(0.7f, 0.7f, 0.7f);
+            helpText.style.marginTop = 10;
+            helpText.style.whiteSpace = WhiteSpace.Normal;
+            contentContainer.Add(helpText);
         }
         
         private void CreateErosionProperties(ErosionNode node)

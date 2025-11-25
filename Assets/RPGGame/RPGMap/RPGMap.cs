@@ -99,6 +99,12 @@ namespace RPGGame.Map
                 
                 // Apply new heights
                 terrain.terrainData.SetHeights(0, 0, heights);
+                
+                // Regenerate splat maps if any exist
+                if (splatOutputs != null && splatOutputs.Count > 0)
+                {
+                    ApplySplatMaps(terrain, tileCoord.x, tileCoord.y);
+                }
             }
             
             // Re-weld edges to remove seams
@@ -317,32 +323,47 @@ namespace RPGGame.Map
                         double worldX = offsetX + normalizedX * tileSize.x;
                         double worldZ = offsetZ + normalizedZ * tileSize.z;
                         
-                        // Priority-based blending: later layers (higher orderId) take priority over earlier layers
-                        // Process layers in order, using alpha compositing where later layers can overwrite earlier ones
-                        float[] layerAlphas = new float[splatOutputs.Count];
-                        float remainingAlpha = 1.0f; // Track how much alpha is still available
+                        // MapMagic-style "Photoshop layered style" blending
+                        // Process from top to bottom (highest orderId to lowest)
+                        // Later layers (higher indices) consume available alpha first
                         
+                        // First pass: calculate raw weights for all layers
+                        float[] rawWeights = new float[splatOutputs.Count];
                         for (int i = 0; i < splatOutputs.Count; i++)
                         {
-                            float weight = 0f;
+                            float normalizedWeight = 0f;
                             
                             if (splatOutputs[i].noiseModule != null)
                             {
                                 double noiseValue = splatOutputs[i].noiseModule.GetValue(worldX, 0, worldZ);
                                 // Remap from [-1,1] to [0,1] using linear interpolation
-                                float normalizedWeight = (float)((noiseValue + 1.0) * 0.5);
+                                normalizedWeight = (float)((noiseValue + 1.0) * 0.5);
                                 normalizedWeight = Mathf.Clamp01(normalizedWeight);
-                                
-                                // This layer's alpha is its weight, but limited by remaining alpha
-                                // Later layers with strong values will take priority
-                                weight = normalizedWeight * remainingAlpha;
                             }
                             
-                            layerAlphas[i] = weight;
+                            rawWeights[i] = normalizedWeight;
+                        }
+                        
+                        // Second pass: Apply MapMagic-style priority blending
+                        // Process from last layer to first (top to bottom)
+                        float[] layerAlphas = new float[splatOutputs.Count];
+                        float left = 1.0f; // Available alpha remaining
+                        
+                        // Process from last layer to first (top to bottom)
+                        for (int i = splatOutputs.Count - 1; i >= 0; i--)
+                        {
+                            float val = rawWeights[i];
                             
-                            // Reduce remaining alpha for next layers (alpha compositing)
-                            // Later layers can only contribute what's left after earlier layers
-                            remainingAlpha = Mathf.Max(0f, remainingAlpha - weight);
+                            // Multiply by remaining alpha (Photoshop layered style)
+                            val = val * left;
+                            layerAlphas[i] = val;
+                            
+                            // Reduce available alpha for earlier layers
+                            left -= val;
+                            
+                            // If no alpha left, earlier layers get nothing
+                            if (left <= 0f)
+                                break;
                         }
                         
                         // Normalize to ensure they sum to 1 (Unity terrain requirement)

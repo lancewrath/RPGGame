@@ -450,6 +450,8 @@ namespace RPGGame.Map
                     return CreateScaleBias(nodeData);
                 case "Clamp":
                     return CreateClamp(nodeData);
+                case "Height Selector":
+                    return CreateHeightSelector(nodeData);
                 case "Power":
                     return new Power();
                 case "Abs":
@@ -546,6 +548,14 @@ namespace RPGGame.Map
             clamp.Minimum = GetPropertyDouble(nodeData, "minimum", -1.0);
             clamp.Maximum = GetPropertyDouble(nodeData, "maximum", 1.0);
             return clamp;
+        }
+        
+        private static LibNoise.Operator.HeightSelector CreateHeightSelector(NoiseNodeData nodeData)
+        {
+            var heightSelector = new LibNoise.Operator.HeightSelector();
+            heightSelector.MinHeight = GetPropertyDouble(nodeData, "minHeight", -1.0);
+            heightSelector.MaxHeight = GetPropertyDouble(nodeData, "maxHeight", 1.0);
+            return heightSelector;
         }
         
         private static LibNoise.Operator.Erosion CreateErosion(NoiseNodeData nodeData)

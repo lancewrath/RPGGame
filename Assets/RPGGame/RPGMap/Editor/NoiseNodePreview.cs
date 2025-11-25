@@ -250,6 +250,23 @@ namespace RPGGame.Map.Editor
                         return clamp;
                     }
                     break;
+                case "Height Selector":
+                    var heightSelectorNode = node as HeightSelectorNode;
+                    if (heightSelectorNode != null)
+                    {
+                        ModuleBase inputModule = GetInputModule(node, graphView, visitedNodes, 0);
+                        if (inputModule == null)
+                        {
+                            var perlin = new LibNoise.Generator.Perlin();
+                            perlin.Frequency = 1.0;
+                            inputModule = perlin;
+                        }
+                        var heightSelector = new LibNoise.Operator.HeightSelector(inputModule);
+                        heightSelector.MinHeight = heightSelectorNode.minHeight;
+                        heightSelector.MaxHeight = heightSelectorNode.maxHeight;
+                        return heightSelector;
+                    }
+                    break;
                 case "Add":
                     var addNode = node as AddNode;
                     if (addNode != null)

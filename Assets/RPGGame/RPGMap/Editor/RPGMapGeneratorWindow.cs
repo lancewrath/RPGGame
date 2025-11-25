@@ -464,6 +464,7 @@ namespace RPGGame.Map.Editor
                 case "Beach": return new BeachNode();
                 case "Sediment": return new SedimentNode();
                 case "Clamp": return new ClampNode();
+                case "Height Selector": return new HeightSelectorNode();
                 case "Cache": return new CacheNode();
                 case "Select": return new SelectNode();
                 case "Curve": return new CurveNode();
@@ -593,6 +594,11 @@ namespace RPGGame.Map.Editor
                     level = 2,
                     userData = typeof(ClampNode)
                 },
+                new SearchTreeEntry(new GUIContent("Height Selector", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(HeightSelectorNode)
+                },
                 new SearchTreeEntry(new GUIContent("Select", indentationIcon))
                 {
                     level = 2,
@@ -707,6 +713,8 @@ namespace RPGGame.Map.Editor
                 node = new SedimentNode();
             else if (nodeType == typeof(ClampNode))
                 node = new ClampNode();
+            else if (nodeType == typeof(HeightSelectorNode))
+                node = new HeightSelectorNode();
             else if (nodeType == typeof(CacheNode))
                 node = new CacheNode();
             else if (nodeType == typeof(SelectNode))

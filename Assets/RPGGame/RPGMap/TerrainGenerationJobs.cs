@@ -134,29 +134,41 @@ namespace RPGGame.Map
             });
             
             // Phase 2: Process noise values into alphamaps in parallel (no locks needed)
+            // Using MapMagic's "Photoshop layered style" blending approach
             Parallel.For(0, alphamapResolution, z =>
             {
                 for (int x = 0; x < alphamapResolution; x++)
                 {
-                    // Priority-based blending: later layers (higher orderId) take priority over earlier layers
-                    // Process layers in order, using alpha compositing where later layers can overwrite earlier ones
-                    float[] layerAlphas = new float[splatOutputs.Count];
-                    float remainingAlpha = 1.0f; // Track how much alpha is still available
-                    
+                    // First pass: calculate raw weights for all layers and remap from [-1,1] to [0,1]
+                    float[] rawWeights = new float[splatOutputs.Count];
                     for (int i = 0; i < splatOutputs.Count; i++)
                     {
-                        // Remap from [-1,1] to [0,1]
                         float normalizedWeight = (float)((noiseValues[z, x, i] + 1.0) * 0.5);
                         normalizedWeight = Mathf.Clamp01(normalizedWeight);
+                        rawWeights[i] = normalizedWeight;
+                    }
+                    
+                    // Second pass: Apply MapMagic-style priority blending
+                    // Process from top to bottom (highest orderId to lowest)
+                    // Later layers (higher indices) consume available alpha first
+                    float[] layerAlphas = new float[splatOutputs.Count];
+                    float left = 1.0f; // Available alpha remaining
+                    
+                    // Process from last layer to first (top to bottom)
+                    for (int i = splatOutputs.Count - 1; i >= 0; i--)
+                    {
+                        float val = rawWeights[i];
                         
-                        // This layer's alpha is its weight, but limited by remaining alpha
-                        // Later layers with strong values will take priority
-                        float weight = normalizedWeight * remainingAlpha;
-                        layerAlphas[i] = weight;
+                        // Multiply by remaining alpha (Photoshop layered style)
+                        val = val * left;
+                        layerAlphas[i] = val;
                         
-                        // Reduce remaining alpha for next layers (alpha compositing)
-                        // Later layers can only contribute what's left after earlier layers
-                        remainingAlpha = Mathf.Max(0f, remainingAlpha - weight);
+                        // Reduce available alpha for earlier layers
+                        left -= val;
+                        
+                        // If no alpha left, earlier layers get nothing
+                        if (left <= 0f)
+                            break;
                     }
                     
                     // Normalize to ensure they sum to 1 (Unity terrain requirement)
