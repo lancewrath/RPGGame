@@ -166,11 +166,13 @@ namespace RPGGame.Map.Editor
         public double beachSize = 0.1;
         public double beachHeight = 0.05;
         public double smoothRange = 0.02;
+        public double sandBlur = 0.05;
         
         public BeachNode() : base("Beach", "Beach")
         {
             CreateInputPort("Input");
             CreateOutputPort("Output");
+            CreateOutputPort("Sand"); // Second output for sand mask
             RefreshExpandedState();
             RefreshPorts();
         }
@@ -182,7 +184,8 @@ namespace RPGGame.Map.Editor
                 new NoisePropertyData { key = "waterLevel", value = waterLevel.ToString(), valueType = "double" },
                 new NoisePropertyData { key = "beachSize", value = beachSize.ToString(), valueType = "double" },
                 new NoisePropertyData { key = "beachHeight", value = beachHeight.ToString(), valueType = "double" },
-                new NoisePropertyData { key = "smoothRange", value = smoothRange.ToString(), valueType = "double" }
+                new NoisePropertyData { key = "smoothRange", value = smoothRange.ToString(), valueType = "double" },
+                new NoisePropertyData { key = "sandBlur", value = sandBlur.ToString(), valueType = "double" }
             };
         }
         
@@ -196,6 +199,44 @@ namespace RPGGame.Map.Editor
                     case "beachSize": double.TryParse(prop.value, out beachSize); break;
                     case "beachHeight": double.TryParse(prop.value, out beachHeight); break;
                     case "smoothRange": double.TryParse(prop.value, out smoothRange); break;
+                    case "sandBlur": double.TryParse(prop.value, out sandBlur); break;
+                }
+            }
+        }
+    }
+    
+    public class SedimentNode : NoiseGraphNode
+    {
+        public double cliffThreshold = 0.1;
+        public double sedimentThreshold = 0.01;
+        
+        public SedimentNode() : base("Sediment", "Sediment")
+        {
+            CreateInputPort("Pre Erosion");
+            CreateInputPort("Post Erosion");
+            CreateOutputPort("Cliff");
+            CreateOutputPort("Sediment");
+            RefreshExpandedState();
+            RefreshPorts();
+        }
+        
+        protected override List<NoisePropertyData> GetSerializedProperties()
+        {
+            return new List<NoisePropertyData>
+            {
+                new NoisePropertyData { key = "cliffThreshold", value = cliffThreshold.ToString(), valueType = "double" },
+                new NoisePropertyData { key = "sedimentThreshold", value = sedimentThreshold.ToString(), valueType = "double" }
+            };
+        }
+        
+        protected override void DeserializeProperties(List<NoisePropertyData> properties)
+        {
+            foreach (var prop in properties)
+            {
+                switch (prop.key)
+                {
+                    case "cliffThreshold": double.TryParse(prop.value, out cliffThreshold); break;
+                    case "sedimentThreshold": double.TryParse(prop.value, out sedimentThreshold); break;
                 }
             }
         }
@@ -457,6 +498,122 @@ namespace RPGGame.Map.Editor
                 else if (prop.key == "terrainHeight")
                 {
                     double.TryParse(prop.value, out terrainHeight);
+                }
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Cache node - caches a 2D preview of the input module for faster preview generation.
+    /// Use the "Generate Cache" button in the property inspector to generate the cache.
+    /// </summary>
+    public class CacheNode : NoiseGraphNode
+    {
+        public bool isCached = false;
+        public double cacheScale = 0.1;
+        
+        // Cached values stored in the node (for preview use)
+        // Serialized as a flattened array: values[x + z * cacheSize]
+        [SerializeField]
+        private float[] cachedValuesArray;
+        private const int CacheSize = 128; // Match preview size
+        
+        public double[,] GetCachedValues()
+        {
+            if (!isCached || cachedValuesArray == null || cachedValuesArray.Length != CacheSize * CacheSize)
+                return null;
+            
+            double[,] values = new double[CacheSize, CacheSize];
+            for (int z = 0; z < CacheSize; z++)
+            {
+                for (int x = 0; x < CacheSize; x++)
+                {
+                    values[x, z] = cachedValuesArray[x + z * CacheSize];
+                }
+            }
+            return values;
+        }
+        
+        public void SetCachedValues(double[,] values)
+        {
+            if (values == null || values.GetLength(0) != CacheSize || values.GetLength(1) != CacheSize)
+            {
+                cachedValuesArray = null;
+                isCached = false;
+                return;
+            }
+            
+            cachedValuesArray = new float[CacheSize * CacheSize];
+            for (int z = 0; z < CacheSize; z++)
+            {
+                for (int x = 0; x < CacheSize; x++)
+                {
+                    cachedValuesArray[x + z * CacheSize] = (float)values[x, z];
+                }
+            }
+            isCached = true;
+        }
+        
+        public double GetCachedValue(int x, int z)
+        {
+            if (!isCached || cachedValuesArray == null || x < 0 || x >= CacheSize || z < 0 || z >= CacheSize)
+                return 0.0;
+            
+            return cachedValuesArray[x + z * CacheSize];
+        }
+        
+        public CacheNode() : base("Cache", "Cache")
+        {
+            CreateInputPort("Input");
+            CreateOutputPort("Output");
+            RefreshExpandedState();
+            RefreshPorts();
+        }
+        
+        protected override List<NoisePropertyData> GetSerializedProperties()
+        {
+            var props = new List<NoisePropertyData>
+            {
+                new NoisePropertyData { key = "isCached", value = isCached.ToString(), valueType = "bool" },
+                new NoisePropertyData { key = "cacheScale", value = cacheScale.ToString(), valueType = "double" }
+            };
+            
+            // Serialize cached values as a comma-separated string
+            if (isCached && cachedValuesArray != null)
+            {
+                var valuesString = string.Join(",", cachedValuesArray);
+                props.Add(new NoisePropertyData { key = "cachedValues", value = valuesString, valueType = "string" });
+            }
+            
+            return props;
+        }
+        
+        protected override void DeserializeProperties(List<NoisePropertyData> properties)
+        {
+            foreach (var prop in properties)
+            {
+                if (prop.key == "isCached")
+                {
+                    bool.TryParse(prop.value, out isCached);
+                }
+                else if (prop.key == "cacheScale")
+                {
+                    double.TryParse(prop.value, out cacheScale);
+                }
+                else if (prop.key == "cachedValues")
+                {
+                    if (!string.IsNullOrEmpty(prop.value))
+                    {
+                        var values = prop.value.Split(',');
+                        if (values.Length == CacheSize * CacheSize)
+                        {
+                            cachedValuesArray = new float[CacheSize * CacheSize];
+                            for (int i = 0; i < values.Length; i++)
+                            {
+                                float.TryParse(values[i], out cachedValuesArray[i]);
+                            }
+                        }
+                    }
                 }
             }
         }

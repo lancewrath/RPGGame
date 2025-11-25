@@ -14,6 +14,7 @@ namespace RPGGame.Map.Editor
         private VisualElement contentContainer;
         private System.Func<List<string>> getPortalNamesCallback;
         private System.Action refreshPortalOutValidityCallback;
+        private System.Func<NoiseGraphView> getGraphViewCallback;
         
         public NoiseNodePropertyInspector()
         {
@@ -55,6 +56,11 @@ namespace RPGGame.Map.Editor
         public void SetRefreshPortalOutValidityCallback(System.Action callback)
         {
             refreshPortalOutValidityCallback = callback;
+        }
+        
+        public void SetGetGraphViewCallback(System.Func<NoiseGraphView> callback)
+        {
+            getGraphViewCallback = callback;
         }
         
         private void RefreshPortalOutValidity()
@@ -105,6 +111,12 @@ namespace RPGGame.Map.Editor
                     break;
                 case "Beach":
                     CreateBeachProperties(node as BeachNode);
+                    break;
+                case "Sediment":
+                    CreateSedimentProperties(node as SedimentNode);
+                    break;
+                case "Cache":
+                    CreateCacheProperties(node as CacheNode);
                     break;
                 case "Select":
                     CreateSelectProperties(node as SelectNode);
@@ -298,6 +310,147 @@ namespace RPGGame.Map.Editor
                 node.smoothRange = val;
                 currentNode?.NotifyNodeChanged();
             });
+            AddDoubleField("Sand Blur", node.sandBlur, (val) => {
+                node.sandBlur = val;
+                currentNode?.NotifyNodeChanged();
+            });
+            
+            // Add help text about outputs
+            var helpText = new Label("This node has two outputs:\n" +
+                "• Output: Beach-modified height\n" +
+                "• Sand: Sand mask for splatting (0.0-1.0)");
+            helpText.style.fontSize = 9;
+            helpText.style.color = new Color(0.6f, 0.6f, 0.6f);
+            helpText.style.marginTop = 5;
+            helpText.style.whiteSpace = WhiteSpace.Normal;
+            contentContainer.Add(helpText);
+        }
+        
+        private void CreateSedimentProperties(SedimentNode node)
+        {
+            if (node == null) return;
+            
+            AddDoubleField("Cliff Threshold", node.cliffThreshold, (val) => {
+                node.cliffThreshold = val;
+                currentNode?.NotifyNodeChanged();
+            });
+            AddDoubleField("Sediment Threshold", node.sedimentThreshold, (val) => {
+                node.sedimentThreshold = val;
+                currentNode?.NotifyNodeChanged();
+            });
+            
+            // Add help text about inputs and outputs
+            var helpText = new Label("This node compares pre-erosion and post-erosion heights:\n" +
+                "• Inputs: Pre Erosion, Post Erosion\n" +
+                "• Cliff: Detects steep drops (erosion removed material)\n" +
+                "• Sediment: Detects material deposits (height increased)\n" +
+                "Both outputs are masks (0.0-1.0) for splatting.");
+            helpText.style.fontSize = 9;
+            helpText.style.color = new Color(0.6f, 0.6f, 0.6f);
+            helpText.style.marginTop = 5;
+            helpText.style.whiteSpace = WhiteSpace.Normal;
+            contentContainer.Add(helpText);
+        }
+        
+        private void CreateCacheProperties(CacheNode node)
+        {
+            if (node == null) return;
+            
+            // Cache Scale field
+            AddDoubleField("Cache Scale", node.cacheScale, (val) => {
+                node.cacheScale = val;
+                node.isCached = false; // Invalidate cache when scale changes
+                currentNode?.NotifyNodeChanged();
+            });
+            
+            // Cache status label
+            var statusContainer = new VisualElement();
+            statusContainer.style.marginBottom = 5;
+            statusContainer.style.marginTop = 5;
+            
+            var statusLabel = new Label(node.isCached ? "Status: Cached" : "Status: Not Cached");
+            statusLabel.style.fontSize = 11;
+            statusLabel.style.color = node.isCached ? new Color(0.4f, 0.8f, 0.4f) : new Color(0.8f, 0.6f, 0.4f);
+            statusContainer.Add(statusLabel);
+            contentContainer.Add(statusContainer);
+            
+            // Generate Cache button
+            var buttonContainer = new VisualElement();
+            buttonContainer.style.marginTop = 5;
+            buttonContainer.style.marginBottom = 5;
+            
+            var generateButton = new Button(() => {
+                if (getGraphViewCallback == null)
+                {
+                    Debug.LogWarning("Cannot generate cache: Graph view not available");
+                    return;
+                }
+                
+                var graphView = getGraphViewCallback();
+                if (graphView == null)
+                {
+                    Debug.LogWarning("Cannot generate cache: Graph view is null");
+                    return;
+                }
+                
+                // Build the module graph up to this cache node
+                var inputModule = NoiseNodePreview.BuildNodeModuleForInput(node, graphView);
+                if (inputModule == null)
+                {
+                    Debug.LogWarning("Cannot generate cache: No input module connected");
+                    return;
+                }
+                
+                // Create PreviewCache module and generate cache
+                var cacheModule = new LibNoise.Operator.PreviewCache(inputModule);
+                cacheModule.CacheSize = 128; // Match preview size
+                cacheModule.CacheScale = node.cacheScale;
+                cacheModule.GenerateCache();
+                
+                // Extract cached values from the module and store in the node
+                double[,] cachedValues = new double[128, 128];
+                for (int z = 0; z < 128; z++)
+                {
+                    for (int x = 0; x < 128; x++)
+                    {
+                        cachedValues[x, z] = cacheModule.GetCachedValue(x, z);
+                    }
+                }
+                node.SetCachedValues(cachedValues);
+                
+                currentNode?.NotifyNodeChanged();
+                
+                // Update status label
+                statusLabel.text = "Status: Cached";
+                statusLabel.style.color = new Color(0.4f, 0.8f, 0.4f);
+                
+                Debug.Log($"Cache generated for node {node.NodeGuid}");
+            });
+            generateButton.text = "Generate Cache";
+            generateButton.style.width = Length.Percent(100);
+            buttonContainer.Add(generateButton);
+            contentContainer.Add(buttonContainer);
+            
+            // Clear Cache button
+            var clearButton = new Button(() => {
+                node.SetCachedValues(null);
+                currentNode?.NotifyNodeChanged();
+                
+                // Update status label
+                statusLabel.text = "Status: Not Cached";
+                statusLabel.style.color = new Color(0.8f, 0.6f, 0.4f);
+            });
+            clearButton.text = "Clear Cache";
+            clearButton.style.width = Length.Percent(100);
+            clearButton.style.marginTop = 5;
+            buttonContainer.Add(clearButton);
+            
+            var helpText = new Label("Generate a cached preview of the input module. This speeds up preview generation for nodes connected after the cache.");
+            helpText.style.fontSize = 9;
+            helpText.style.color = new Color(0.6f, 0.6f, 0.6f);
+            helpText.style.marginTop = 5;
+            helpText.style.whiteSpace = WhiteSpace.Normal;
+            contentContainer.Add(helpText);
         }
         
         private void CreateSelectProperties(SelectNode node)
@@ -307,6 +460,19 @@ namespace RPGGame.Map.Editor
             AddDoubleField("Minimum", node.minimum, (val) => node.minimum = val);
             AddDoubleField("Maximum", node.maximum, (val) => node.maximum = val);
             AddDoubleField("Fall Off", node.fallOff, (val) => node.fallOff = val);
+            
+            // Add help text explaining how Select works
+            var helpText = new Label("How Select works:\n" +
+                "• A and B are the two input values to choose between\n" +
+                "• Control determines which one to use\n" +
+                "• If Control < Minimum: outputs A\n" +
+                "• If Control > Maximum: outputs B\n" +
+                "• If Control is between Min/Max: blends between A and B");
+            helpText.style.fontSize = 9;
+            helpText.style.color = new Color(0.6f, 0.6f, 0.6f);
+            helpText.style.marginTop = 5;
+            helpText.style.whiteSpace = WhiteSpace.Normal;
+            contentContainer.Add(helpText);
         }
         
         private void CreateCurveProperties(CurveNode node)

@@ -46,8 +46,12 @@ namespace RPGGame.Map
             }
             
             // Build all modules
+            // Use composite keys "nodeGuid:outputPortIndex" to support multiple outputs per node
             Dictionary<string, ModuleBase> builtModules = new Dictionary<string, ModuleBase>();
             Dictionary<string, ModuleBase> portalModules = new Dictionary<string, ModuleBase>(); // Portal name -> module
+            
+            // Helper function to get module key
+            System.Func<string, int, string> GetModuleKey = (nodeGuid, outputPortIndex) => $"{nodeGuid}:{outputPortIndex}";
             
             // First pass: create all modules (skip Output nodes and Portal In/Out nodes - they're handled specially)
             foreach (var nodeData in graphData.nodes)
@@ -59,11 +63,46 @@ namespace RPGGame.Map
                 // Skip Portal In and Portal Out nodes - they're handled in a separate pass
                 if (nodeData.nodeType == "Portal In" || nodeData.nodeType == "Portal Out")
                     continue;
-                    
-                ModuleBase module = CreateModule(nodeData);
-                if (module != null)
+                
+                // Handle nodes with multiple outputs
+                if (nodeData.nodeType == "Beach")
                 {
-                    builtModules[nodeData.guid] = module;
+                    // Beach has two outputs: 0 = Output, 1 = Sand
+                    ModuleBase beachModule = CreateBeach(nodeData);
+                    if (beachModule != null)
+                    {
+                        builtModules[GetModuleKey(nodeData.guid, 0)] = beachModule;
+                    }
+                    
+                    ModuleBase sandModule = CreateBeachSand(nodeData);
+                    if (sandModule != null)
+                    {
+                        builtModules[GetModuleKey(nodeData.guid, 1)] = sandModule;
+                    }
+                }
+                else if (nodeData.nodeType == "Sediment")
+                {
+                    // Sediment has two outputs: 0 = Cliff, 1 = Sediment
+                    ModuleBase cliffModule = CreateSedimentCliff(nodeData);
+                    if (cliffModule != null)
+                    {
+                        builtModules[GetModuleKey(nodeData.guid, 0)] = cliffModule;
+                    }
+                    
+                    ModuleBase sedimentModule = CreateSedimentSediment(nodeData);
+                    if (sedimentModule != null)
+                    {
+                        builtModules[GetModuleKey(nodeData.guid, 1)] = sedimentModule;
+                    }
+                }
+                else
+                {
+                    // Single output nodes (default to port 0)
+                    ModuleBase module = CreateModule(nodeData);
+                    if (module != null)
+                    {
+                        builtModules[GetModuleKey(nodeData.guid, 0)] = module;
+                    }
                 }
             }
             
@@ -94,14 +133,64 @@ namespace RPGGame.Map
                     continue;
                 }
                 
-                if (builtModules.TryGetValue(edge.outputNodeGuid, out ModuleBase outputModule) &&
-                    builtModules.TryGetValue(edge.inputNodeGuid, out ModuleBase inputModule))
+                // Get modules using composite keys (support multiple outputs)
+                string edgeOutputModuleKey = GetModuleKey(edge.outputNodeGuid, edge.outputPortIndex);
+                string edgeInputModuleKey = GetModuleKey(edge.inputNodeGuid, 0); // Input nodes only have one module (port 0)
+                
+                if (builtModules.TryGetValue(edgeOutputModuleKey, out ModuleBase outputModule) &&
+                    builtModules.TryGetValue(edgeInputModuleKey, out ModuleBase inputModule))
                 {
                     // Check if the input module can accept a source module at this index
                     // SourceModuleCount is the number of source module slots, so valid indices are 0 to SourceModuleCount-1
                     if (inputModule.SourceModuleCount > 0 && edge.inputPortIndex >= 0 && edge.inputPortIndex < inputModule.SourceModuleCount)
                     {
                         inputModule[edge.inputPortIndex] = outputModule;
+                        
+                        // Special handling for nodes with multiple outputs that share inputs:
+                        // BeachSand needs the same input as Beach
+                        if (inputNode != null && inputNode.nodeType == "Beach" && edge.inputPortIndex == 0)
+                        {
+                            // Also connect to BeachSand module (port 1)
+                            string sandModuleKey = GetModuleKey(edge.inputNodeGuid, 1);
+                            if (builtModules.TryGetValue(sandModuleKey, out ModuleBase sandModule))
+                            {
+                                sandModule[0] = outputModule;
+                            }
+                        }
+                        
+                        // SedimentCliff and SedimentSediment need both inputs connected
+                        // PreErosion (port 0) and PostErosion (port 1)
+                        if (inputNode != null && inputNode.nodeType == "Sediment")
+                        {
+                            if (edge.inputPortIndex == 0) // PreErosion input
+                            {
+                                // Connect to both Cliff and Sediment modules
+                                string cliffModuleKey = GetModuleKey(edge.inputNodeGuid, 0);
+                                string sedimentModuleKey = GetModuleKey(edge.inputNodeGuid, 1);
+                                if (builtModules.TryGetValue(cliffModuleKey, out ModuleBase cliffModule))
+                                {
+                                    cliffModule[0] = outputModule; // PreErosion input
+                                }
+                                if (builtModules.TryGetValue(sedimentModuleKey, out ModuleBase sedimentModule))
+                                {
+                                    sedimentModule[0] = outputModule; // PreErosion input
+                                }
+                            }
+                            else if (edge.inputPortIndex == 1) // PostErosion input
+                            {
+                                // Connect to both Cliff and Sediment modules
+                                string cliffModuleKey = GetModuleKey(edge.inputNodeGuid, 0);
+                                string sedimentModuleKey = GetModuleKey(edge.inputNodeGuid, 1);
+                                if (builtModules.TryGetValue(cliffModuleKey, out ModuleBase cliffModule))
+                                {
+                                    cliffModule[1] = outputModule; // PostErosion input
+                                }
+                                if (builtModules.TryGetValue(sedimentModuleKey, out ModuleBase sedimentModule))
+                                {
+                                    sedimentModule[1] = outputModule; // PostErosion input
+                                }
+                            }
+                        }
                     }
                     else
                     {
@@ -110,11 +199,11 @@ namespace RPGGame.Map
                 }
                 else
                 {
-                    if (!builtModules.ContainsKey(edge.outputNodeGuid))
+                    if (!builtModules.ContainsKey(edgeOutputModuleKey))
                     {
-                        Debug.LogWarning($"Cannot connect module: output module not found (GUID: {edge.outputNodeGuid})");
+                        Debug.LogWarning($"Cannot connect module: output module not found (GUID: {edge.outputNodeGuid}, port: {edge.outputPortIndex})");
                     }
-                    if (!builtModules.ContainsKey(edge.inputNodeGuid))
+                    if (!builtModules.ContainsKey(edgeInputModuleKey))
                     {
                         Debug.LogWarning($"Cannot connect module: input module not found (GUID: {edge.inputNodeGuid})");
                     }
@@ -158,7 +247,9 @@ namespace RPGGame.Map
             foreach (var edge in portalOutEdges)
             {
                 // Skip if the Portal Out node wasn't successfully resolved (not in builtModules)
-                if (!builtModules.ContainsKey(edge.outputNodeGuid))
+                // Check using composite key (port 0)
+                string portalOutKey = GetModuleKey(edge.outputNodeGuid, 0);
+                if (!builtModules.ContainsKey(portalOutKey))
                 {
                     // Portal Out node couldn't be resolved (empty name, missing portal, etc.)
                     // Skip this edge - the input module will get a fallback during validation
@@ -169,21 +260,25 @@ namespace RPGGame.Map
                 if (inputNode != null && (inputNode.nodeType == "Output" || inputNode.nodeType == "SplatOutput"))
                     continue;
                 
-                if (builtModules.TryGetValue(edge.outputNodeGuid, out ModuleBase outputModule) &&
-                    builtModules.TryGetValue(edge.inputNodeGuid, out ModuleBase inputModule))
+                // Get modules using composite keys
+                string portalOutputModuleKey = GetModuleKey(edge.outputNodeGuid, edge.outputPortIndex);
+                string portalInputModuleKey = GetModuleKey(edge.inputNodeGuid, 0);
+                
+                if (builtModules.TryGetValue(portalOutputModuleKey, out ModuleBase portalOutputModule) &&
+                    builtModules.TryGetValue(portalInputModuleKey, out ModuleBase portalInputModule))
                 {
-                    if (inputModule.SourceModuleCount > 0 && edge.inputPortIndex >= 0 && edge.inputPortIndex < inputModule.SourceModuleCount)
+                    if (portalInputModule.SourceModuleCount > 0 && edge.inputPortIndex >= 0 && edge.inputPortIndex < portalInputModule.SourceModuleCount)
                     {
-                        inputModule[edge.inputPortIndex] = outputModule;
+                        portalInputModule[edge.inputPortIndex] = portalOutputModule;
                     }
                     else
                     {
-                        Debug.LogWarning($"Cannot connect Portal Out module: input module '{inputNode?.nodeType}' (GUID: {edge.inputNodeGuid}) has SourceModuleCount={inputModule.SourceModuleCount}, but trying to connect to port index {edge.inputPortIndex}");
+                        Debug.LogWarning($"Cannot connect Portal Out module: input module '{inputNode?.nodeType}' (GUID: {edge.inputNodeGuid}) has SourceModuleCount={portalInputModule.SourceModuleCount}, but trying to connect to port index {edge.inputPortIndex}");
                     }
                 }
                 else
                 {
-                    if (!builtModules.ContainsKey(edge.inputNodeGuid))
+                    if (!builtModules.ContainsKey(portalInputModuleKey))
                     {
                         Debug.LogWarning($"Cannot connect Portal Out module: input module not found (GUID: {edge.inputNodeGuid})");
                     }
@@ -194,7 +289,9 @@ namespace RPGGame.Map
             // If a Curve module doesn't have an input, we'll use a default Perlin noise as fallback
             foreach (var kvp in builtModules)
             {
-                var nodeData = graphData.nodes.FirstOrDefault(n => n.guid == kvp.Key);
+                // Extract node GUID from composite key (format: "guid:portIndex")
+                string nodeGuid = kvp.Key.Split(':')[0];
+                var nodeData = graphData.nodes.FirstOrDefault(n => n.guid == nodeGuid);
                 if (nodeData != null && nodeData.nodeType == "Curve")
                 {
                     var curveModule = kvp.Value as LibNoise.Operator.Curve;
@@ -261,8 +358,9 @@ namespace RPGGame.Map
                 }
             }
             
-            // Return the output module
-            if (builtModules.TryGetValue(outputNode.guid, out ModuleBase result))
+            // Return the output module (use port 0 for output node)
+            string outputModuleKey = GetModuleKey(outputNode.guid, 0);
+            if (builtModules.TryGetValue(outputModuleKey, out ModuleBase result))
             {
                 return result;
             }
@@ -312,6 +410,8 @@ namespace RPGGame.Map
                     return CreateErosion(nodeData);
                 case "Beach":
                     return CreateBeach(nodeData);
+                case "Cache":
+                    return CreateCache(nodeData);
                 case "Select":
                     return CreateSelect(nodeData);
                 case "Curve":
@@ -405,7 +505,7 @@ namespace RPGGame.Map
             return erosion;
         }
         
-        private static LibNoise.Operator.Beach CreateBeach(NoiseNodeData nodeData)
+        public static LibNoise.Operator.Beach CreateBeach(NoiseNodeData nodeData)
         {
             var beach = new LibNoise.Operator.Beach();
             beach.WaterLevel = GetPropertyDouble(nodeData, "waterLevel", 0.0);
@@ -413,6 +513,37 @@ namespace RPGGame.Map
             beach.BeachHeight = GetPropertyDouble(nodeData, "beachHeight", 0.05);
             beach.SmoothRange = GetPropertyDouble(nodeData, "smoothRange", 0.02);
             return beach;
+        }
+        
+        public static LibNoise.Operator.BeachSand CreateBeachSand(NoiseNodeData nodeData)
+        {
+            var sand = new LibNoise.Operator.BeachSand();
+            sand.WaterLevel = GetPropertyDouble(nodeData, "waterLevel", 0.0);
+            sand.BeachSize = GetPropertyDouble(nodeData, "beachSize", 0.1);
+            sand.SandBlur = GetPropertyDouble(nodeData, "sandBlur", 0.05);
+            return sand;
+        }
+        
+        public static LibNoise.Operator.SedimentCliff CreateSedimentCliff(NoiseNodeData nodeData)
+        {
+            var cliff = new LibNoise.Operator.SedimentCliff();
+            cliff.CliffThreshold = GetPropertyDouble(nodeData, "cliffThreshold", 0.1);
+            return cliff;
+        }
+        
+        public static LibNoise.Operator.SedimentSediment CreateSedimentSediment(NoiseNodeData nodeData)
+        {
+            var sediment = new LibNoise.Operator.SedimentSediment();
+            sediment.SedimentThreshold = GetPropertyDouble(nodeData, "sedimentThreshold", 0.01);
+            return sediment;
+        }
+        
+        private static LibNoise.Operator.PreviewCache CreateCache(NoiseNodeData nodeData)
+        {
+            var cache = new LibNoise.Operator.PreviewCache();
+            cache.CacheScale = GetPropertyDouble(nodeData, "cacheScale", 0.1);
+            cache.CacheSize = 128; // Match preview size
+            return cache;
         }
         
         private static LibNoise.Operator.Select CreateSelect(NoiseNodeData nodeData)
@@ -441,11 +572,13 @@ namespace RPGGame.Map
                         // LibNoise Curve.Add(inputValue, outputValue):
                         //   - inputValue: the noise input value threshold
                         //   - outputValue: the output value when that threshold is reached
-                        // AnimationCurve mapping:
+                        // AnimationCurve mapping (matches MapMagic's UnityCurve):
                         //   - time (X-axis) = input noise value threshold
                         //   - value (Y-axis) = output value
                         // So: key.time → inputValue, key.value → outputValue
-                        foreach (var key in serializedCurve.keys)
+                        // Sort keys by time to ensure correct order (LibNoise sorts internally, but let's be explicit)
+                        var sortedKeys = serializedCurve.keys.OrderBy(k => k.time).ToList();
+                        foreach (var key in sortedKeys)
                         {
                             curveModule.Add(key.time, key.value);
                         }

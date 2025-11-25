@@ -11,6 +11,7 @@ namespace RPGGame.Map
         public int orderId;
         public string splatNodeGuid; // GUID of the SplatOutput node itself
         public string sourceNodeGuid; // GUID of the node connected to the splat output's input
+        public int sourceOutputPortIndex = 0; // Output port index of the source node (for nodes with multiple outputs)
         public string diffuseTexturePath;
         public string normalMapPath;
         
@@ -66,8 +67,9 @@ namespace RPGGame.Map
                 var inputEdge = graphData.edges.FirstOrDefault(e => e.inputNodeGuid == nodeData.guid);
                 if (inputEdge != null)
                 {
-                    // Store the source node GUID so we can build its module later
+                    // Store the source node GUID and output port index so we can build its module later
                     splatData.sourceNodeGuid = inputEdge.outputNodeGuid;
+                    splatData.sourceOutputPortIndex = inputEdge.outputPortIndex;
                 }
                 
                 splatOutputs.Add(splatData);

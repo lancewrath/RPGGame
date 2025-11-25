@@ -92,6 +92,11 @@ namespace RPGGame.Map.Editor
                 if (graphView != null)
                     graphView.RefreshPortalOutValidity();
             });
+            
+            // Set callback to get graph view for cache generation
+            propertyInspector.SetGetGraphViewCallback(() => {
+                return graphView;
+            });
         }
         
         private void GenerateToolbar()
@@ -457,7 +462,9 @@ namespace RPGGame.Map.Editor
                 case "Normalize": return new NormalizeNode();
                 case "Erosion": return new ErosionNode();
                 case "Beach": return new BeachNode();
+                case "Sediment": return new SedimentNode();
                 case "Clamp": return new ClampNode();
+                case "Cache": return new CacheNode();
                 case "Select": return new SelectNode();
                 case "Curve": return new CurveNode();
                 case "Slope": return new SlopeNode();
@@ -576,6 +583,11 @@ namespace RPGGame.Map.Editor
                     level = 2,
                     userData = typeof(BeachNode)
                 },
+                new SearchTreeEntry(new GUIContent("Sediment", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(SedimentNode)
+                },
                 new SearchTreeEntry(new GUIContent("Clamp", indentationIcon))
                 {
                     level = 2,
@@ -597,6 +609,11 @@ namespace RPGGame.Map.Editor
                     userData = typeof(SlopeNode)
                 },
                 new SearchTreeGroupEntry(new GUIContent("Utility"), 1),
+                new SearchTreeEntry(new GUIContent("Cache", indentationIcon))
+                {
+                    level = 2,
+                    userData = typeof(CacheNode)
+                },
                 new SearchTreeEntry(new GUIContent("Portal In", indentationIcon))
                 {
                     level = 2,
@@ -686,8 +703,12 @@ namespace RPGGame.Map.Editor
                 node = new ErosionNode();
             else if (nodeType == typeof(BeachNode))
                 node = new BeachNode();
+            else if (nodeType == typeof(SedimentNode))
+                node = new SedimentNode();
             else if (nodeType == typeof(ClampNode))
                 node = new ClampNode();
+            else if (nodeType == typeof(CacheNode))
+                node = new CacheNode();
             else if (nodeType == typeof(SelectNode))
                 node = new SelectNode();
             else if (nodeType == typeof(CurveNode))
