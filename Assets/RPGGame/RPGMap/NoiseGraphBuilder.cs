@@ -367,6 +367,58 @@ namespace RPGGame.Map
             
             return null;
         }
+
+        /// <summary>
+        /// Finds all PreviewCache modules in a module graph by recursively traversing the graph.
+        /// </summary>
+        /// <param name="module">The root module to start traversal from.</param>
+        /// <param name="visited">Set of visited modules to prevent infinite loops.</param>
+        /// <returns>List of all PreviewCache modules found in the graph.</returns>
+        public static List<LibNoise.Operator.PreviewCache> FindAllCacheModules(ModuleBase module, HashSet<ModuleBase> visited = null)
+        {
+            List<LibNoise.Operator.PreviewCache> cacheModules = new List<LibNoise.Operator.PreviewCache>();
+            
+            if (module == null)
+                return cacheModules;
+            
+            if (visited == null)
+                visited = new HashSet<ModuleBase>();
+            
+            // Prevent infinite loops
+            if (visited.Contains(module))
+                return cacheModules;
+            
+            visited.Add(module);
+            
+            // Check if this module is a PreviewCache
+            if (module is LibNoise.Operator.PreviewCache cacheModule)
+            {
+                cacheModules.Add(cacheModule);
+            }
+            
+            // Recursively check all source modules
+            if (module.SourceModuleCount > 0)
+            {
+                for (int i = 0; i < module.SourceModuleCount; i++)
+                {
+                    try
+                    {
+                        var sourceModule = module[i];
+                        if (sourceModule != null)
+                        {
+                            cacheModules.AddRange(FindAllCacheModules(sourceModule, visited));
+                        }
+                    }
+                    catch
+                    {
+                        // Some modules may throw exceptions when accessing invalid indices
+                        // Just skip them
+                    }
+                }
+            }
+            
+            return cacheModules;
+        }
         
         public static ModuleBase CreateModule(NoiseNodeData nodeData)
         {

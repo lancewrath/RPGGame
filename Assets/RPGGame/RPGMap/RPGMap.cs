@@ -42,6 +42,10 @@ namespace RPGGame.Map
             // Load heightmap graph
             LoadHeightmapGraph();
             
+            // Populate cache nodes before generating terrain
+            // This caches expensive operations (like erosion) so they don't need to be recalculated for splat maps
+            PopulateCacheNodes();
+            
             // Create parent for tiles
             if (tilesParent == null)
             {
@@ -73,6 +77,9 @@ namespace RPGGame.Map
             
             // Reload heightmap graph (in case it changed)
             LoadHeightmapGraph();
+            
+            // Populate cache nodes before regenerating terrain
+            PopulateCacheNodes();
             
             // Regenerate heights for existing terrain tiles
             int heightmapSize = heightmapResolution + 1;
@@ -713,6 +720,62 @@ namespace RPGGame.Map
                 CreateDefaultHeightmap();
                 splatOutputs.Clear();
             }
+        }
+        
+        private void PopulateCacheNodes()
+        {
+            if (heightmapModule == null)
+                return;
+            
+            // Collect all cache modules from the heightmap module and all splat output modules
+            HashSet<LibNoise.Operator.PreviewCache> allCacheModules = new HashSet<LibNoise.Operator.PreviewCache>();
+            
+            // Find cache modules in heightmap module
+            var heightmapCaches = NoiseGraphBuilder.FindAllCacheModules(heightmapModule);
+            foreach (var cache in heightmapCaches)
+            {
+                allCacheModules.Add(cache);
+            }
+            
+            // Find cache modules in all splat output modules
+            if (splatOutputs != null)
+            {
+                foreach (var splatData in splatOutputs)
+                {
+                    if (splatData.noiseModule != null)
+                    {
+                        var splatCaches = NoiseGraphBuilder.FindAllCacheModules(splatData.noiseModule);
+                        foreach (var cache in splatCaches)
+                        {
+                            allCacheModules.Add(cache);
+                        }
+                    }
+                }
+            }
+            
+            if (allCacheModules.Count == 0)
+                return; // No cache nodes to populate
+            
+            // Calculate terrain bounds
+            // Tiles range from -tileRadius to +tileRadius in both X and Z
+            double minX = -tileRadius * tileSize.x;
+            double minZ = -tileRadius * tileSize.z;
+            double maxX = (tileRadius + 1) * tileSize.x; // +1 to include the edge of the last tile
+            double maxZ = (tileRadius + 1) * tileSize.z;
+            
+            // Use a cache resolution that matches or exceeds the heightmap resolution
+            // This ensures good quality while still providing performance benefits
+            int cacheResolution = heightmapResolution;
+            
+            // Populate all cache modules
+            Debug.Log($"Populating {allCacheModules.Count} cache node(s) for terrain region [{minX:F2}, {minZ:F2}] to [{maxX:F2}, {maxZ:F2}] at resolution {cacheResolution}");
+            
+            foreach (var cacheModule in allCacheModules)
+            {
+                cacheModule.PopulateCacheForRegion(minX, minZ, maxX, maxZ, cacheResolution);
+            }
+            
+            Debug.Log("Cache population complete.");
         }
         
         private void CreateDefaultHeightmap()

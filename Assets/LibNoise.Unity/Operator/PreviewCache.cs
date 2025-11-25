@@ -138,6 +138,59 @@ namespace LibNoise.Operator
         }
 
         /// <summary>
+        /// Populates the cache for a specific world region. This is used during terrain generation
+        /// to automatically cache expensive operations (like erosion) so they don't need to be
+        /// recalculated for splat map generation.
+        /// </summary>
+        /// <param name="minX">Minimum X world coordinate to cache.</param>
+        /// <param name="minZ">Minimum Z world coordinate to cache.</param>
+        /// <param name="maxX">Maximum X world coordinate to cache.</param>
+        /// <param name="maxZ">Maximum Z world coordinate to cache.</param>
+        /// <param name="resolution">Resolution of the cache (number of samples per axis). If 0, uses CacheSize.</param>
+        public void PopulateCacheForRegion(double minX, double minZ, double maxX, double maxZ, int resolution = 0)
+        {
+            Debug.Assert(Modules[0] != null, "Input module must be set before populating cache");
+            
+            if (resolution <= 0)
+            {
+                resolution = _cacheSize;
+            }
+            
+            // Store region bounds
+            _cacheMinX = minX;
+            _cacheMinZ = minZ;
+            _cacheMaxX = maxX;
+            _cacheMaxZ = maxZ;
+            _cacheSize = resolution;
+            
+            // Calculate scale based on region size (for reference, but we use interpolation in GetValue)
+            double regionWidth = maxX - minX;
+            double regionHeight = maxZ - minZ;
+            double avgScale = System.Math.Max(regionWidth, regionHeight) / (resolution > 1 ? resolution - 1 : 1);
+            _cacheScale = avgScale;
+            
+            _cachedValues = new double[_cacheSize, _cacheSize];
+            
+            // Sample the input module across the region
+            for (int z = 0; z < _cacheSize; z++)
+            {
+                for (int x = 0; x < _cacheSize; x++)
+                {
+                    // Interpolate world coordinates across the region
+                    double tX = _cacheSize > 1 ? (double)x / (_cacheSize - 1) : 0;
+                    double tZ = _cacheSize > 1 ? (double)z / (_cacheSize - 1) : 0;
+                    
+                    double worldX = minX + tX * (maxX - minX);
+                    double worldZ = minZ + tZ * (maxZ - minZ);
+                    
+                    _cachedValues[x, z] = Modules[0].GetValue(worldX, 0, worldZ);
+                }
+            }
+            
+            _isCached = true;
+        }
+
+        /// <summary>
         /// Clears the cached values.
         /// </summary>
         public void ClearCache()
@@ -149,7 +202,8 @@ namespace LibNoise.Operator
         /// <summary>
         /// Returns the output value for the given input coordinates.
         /// If the cache is available and the coordinates are within the cached range,
-        /// returns the cached value. Otherwise, falls back to the input module.
+        /// returns the cached value using bilinear interpolation for smooth results.
+        /// Otherwise, falls back to the input module.
         /// </summary>
         /// <param name="x">The input coordinate on the x-axis.</param>
         /// <param name="y">The input coordinate on the y-axis.</param>
@@ -164,10 +218,47 @@ namespace LibNoise.Operator
             {
                 if (x >= _cacheMinX && x <= _cacheMaxX && z >= _cacheMinZ && z <= _cacheMaxZ)
                 {
-                    // Convert world coordinates to cache indices
-                    int cacheX = Mathf.Clamp((int)(x / _cacheScale), 0, _cacheSize - 1);
-                    int cacheZ = Mathf.Clamp((int)(z / _cacheScale), 0, _cacheSize - 1);
-                    return _cachedValues[cacheX, cacheZ];
+                    // Convert world coordinates to cache indices using interpolation
+                    double tX = (_cacheMaxX > _cacheMinX) ? (x - _cacheMinX) / (_cacheMaxX - _cacheMinX) : 0;
+                    double tZ = (_cacheMaxZ > _cacheMinZ) ? (z - _cacheMinZ) / (_cacheMaxZ - _cacheMinZ) : 0;
+                    
+                    // Clamp to valid range
+                    tX = System.Math.Max(0, System.Math.Min(1, tX));
+                    tZ = System.Math.Max(0, System.Math.Min(1, tZ));
+                    
+                    // Convert to cache coordinate space (0 to cacheSize-1)
+                    double cacheCoordX = tX * (_cacheSize - 1);
+                    double cacheCoordZ = tZ * (_cacheSize - 1);
+                    
+                    // Get the four surrounding cache points for bilinear interpolation
+                    int x0 = (int)System.Math.Floor(cacheCoordX);
+                    int z0 = (int)System.Math.Floor(cacheCoordZ);
+                    int x1 = System.Math.Min(x0 + 1, _cacheSize - 1);
+                    int z1 = System.Math.Min(z0 + 1, _cacheSize - 1);
+                    
+                    // Ensure indices are within bounds
+                    x0 = System.Math.Max(0, System.Math.Min(_cacheSize - 1, x0));
+                    z0 = System.Math.Max(0, System.Math.Min(_cacheSize - 1, z0));
+                    
+                    // Get the four corner values
+                    double v00 = _cachedValues[x0, z0]; // Bottom-left
+                    double v10 = _cachedValues[x1, z0]; // Bottom-right
+                    double v01 = _cachedValues[x0, z1]; // Top-left
+                    double v11 = _cachedValues[x1, z1]; // Top-right
+                    
+                    // Calculate fractional parts for interpolation
+                    double fx = cacheCoordX - x0;
+                    double fz = cacheCoordZ - z0;
+                    
+                    // Bilinear interpolation
+                    // First interpolate along X axis
+                    double v0 = v00 * (1 - fx) + v10 * fx; // Bottom edge
+                    double v1 = v01 * (1 - fx) + v11 * fx; // Top edge
+                    
+                    // Then interpolate along Z axis
+                    double result = v0 * (1 - fz) + v1 * fz;
+                    
+                    return result;
                 }
             }
             
