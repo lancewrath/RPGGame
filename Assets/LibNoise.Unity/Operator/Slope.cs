@@ -132,65 +132,74 @@ namespace LibNoise.Operator
             // Take the maximum of both directions (MapMagic approach)
             double maxDelta = deltaX > deltaZ ? deltaX : deltaZ;
             
-            // Convert delta to angle
-            // angle = atan(delta / (sampleDistance * terrainHeightScale))
-            // For terrain, we need to account for the height scale
-            double pixelSize = _sampleDistance; // Assuming 1:1 mapping for noise coordinates
-            double deltaNormalized = maxDelta / (_terrainHeight * pixelSize);
-            double angleRad = Math.Atan(deltaNormalized);
-            double angleDeg = angleRad * (180.0 / Math.PI);
+            // MapMagic converts angle thresholds to delta thresholds, then filters
+            // Formula: deltaThreshold = Tan(angle) * pixelSize / height
+            // MapMagic works with normalized heights [0,1], where delta is also in [0,1]
+            // Our noise values are in [-1,1], so delta is in [0, 2] range (absolute difference)
+            // We need to normalize delta to [0,1] to match MapMagic's approach
+            double pixelSize = _sampleDistance; // World units between samples
             
-            // Apply angle filtering with smooth transitions
-            return FilterByAngle(angleDeg);
-        }
-        
-        /// <summary>
-        /// Filters the angle value based on min/max angle ranges with smooth transitions.
-        /// Returns 0-1 range where 1 means the angle is within the desired range.
-        /// </summary>
-        private double FilterByAngle(double angleDeg)
-        {
+            // Normalize delta from [0, 2] to [0, 1] range (MapMagic uses normalized heights)
+            // Max possible delta in noise space is 2.0 (from -1 to 1)
+            double maxDeltaNormalized = maxDelta / 2.0;
+            
             // Calculate angle ranges with smooth transitions
             double minAng0 = _minAngle - _smoothRange / 2.0;
             double minAng1 = _minAngle + _smoothRange / 2.0;
             double maxAng0 = _maxAngle - _smoothRange / 2.0;
             double maxAng1 = _maxAngle + _smoothRange / 2.0;
             
-            // Handle edge cases
-            if (_minAngle < 0.00001) { minAng0 = -1; minAng1 = -1; }
-            if (maxAng0 > 89.9) maxAng0 = 20000000;
-            if (maxAng1 > 89.9) maxAng1 = 20000000;
+            // Convert angle thresholds to delta thresholds (MapMagic approach)
+            // Formula: deltaThreshold = Tan(angle) * pixelSize / height
+            // This gives normalized delta threshold [0,1]
+            double minDel0 = Math.Tan(minAng0 * Math.PI / 180.0) * pixelSize / _terrainHeight;
+            double minDel1 = Math.Tan(minAng1 * Math.PI / 180.0) * pixelSize / _terrainHeight;
+            double maxDel0 = Math.Tan(maxAng0 * Math.PI / 180.0) * pixelSize / _terrainHeight;
+            double maxDel1 = Math.Tan(maxAng1 * Math.PI / 180.0) * pixelSize / _terrainHeight;
             
-            // Apply SelectRange logic (similar to MapMagic)
+            // Handle edge cases (MapMagic approach)
+            if (_minAngle < 0.00001) { minDel0 = -1; minDel1 = -1; }
+            if (maxAng0 > 89.9) maxDel0 = 20000000;
+            if (maxAng1 > 89.9) maxDel1 = 20000000;
+            
+            // Apply SelectRange logic: filter delta values by threshold range
+            // Returns delta if within range [minDel1, maxDel0], with smooth transitions
+            // Use normalized delta for comparison (matches MapMagic's normalized height space)
             double result;
             
-            if (angleDeg < minAng0 || angleDeg > maxAng1)
+            if (maxDeltaNormalized < minDel0 || maxDeltaNormalized > maxDel1)
             {
-                result = 0.0;
+                result = 0.0; // Outside range
             }
-            else if (angleDeg > minAng1 && angleDeg < maxAng0)
+            else if (maxDeltaNormalized > minDel1 && maxDeltaNormalized < maxDel0)
             {
-                result = 1.0;
+                result = maxDelta; // Fully within range - return the delta value (in noise space)
             }
             else
             {
-                // Smooth transition
+                // Smooth transition at boundaries
                 double minVal = 1.0;
                 double maxVal = 1.0;
                 
-                if (minAng1 > minAng0 && angleDeg >= minAng0 && angleDeg <= minAng1)
+                if (minDel1 > minDel0 && maxDeltaNormalized >= minDel0 && maxDeltaNormalized <= minDel1)
                 {
-                    minVal = (angleDeg - minAng0) / (minAng1 - minAng0);
+                    // Transition from 0 to full at min boundary
+                    minVal = (maxDeltaNormalized - minDel0) / (minDel1 - minDel0);
                 }
                 
-                if (maxAng1 > maxAng0 && angleDeg >= maxAng0 && angleDeg <= maxAng1)
+                if (maxDel1 > maxDel0 && maxDeltaNormalized >= maxDel0 && maxDeltaNormalized <= maxDel1)
                 {
-                    maxVal = 1.0 - (angleDeg - maxAng0) / (maxAng1 - maxAng0);
+                    // Transition from full to 0 at max boundary
+                    maxVal = 1.0 - (maxDeltaNormalized - maxDel0) / (maxDel1 - maxDel0);
                 }
                 
-                result = minVal < maxVal ? minVal : maxVal;
-                if (result < 0.0) result = 0.0;
-                if (result > 1.0) result = 1.0;
+                double blendFactor = minVal < maxVal ? minVal : maxVal;
+                if (blendFactor < 0.0) blendFactor = 0.0;
+                if (blendFactor > 1.0) blendFactor = 1.0;
+                
+                // Return delta multiplied by blend factor (MapMagic returns filtered delta)
+                // Return in noise space to match input/output range
+                result = maxDelta * blendFactor;
             }
             
             return result;

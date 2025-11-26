@@ -381,12 +381,18 @@ namespace RPGGame.Map.Editor
         {
             if (node == null) return;
             
-            // Cache Scale field
+            // Cache Scale field (for reference, but preview cache uses 10.0 to match preview scale)
             AddDoubleField("Cache Scale", node.cacheScale, (val) => {
                 node.cacheScale = val;
                 node.isCached = false; // Invalidate cache when scale changes
                 currentNode?.NotifyNodeChanged();
             });
+            
+            var scaleNote = new Label("Note: Preview cache uses scale 10.0 to match preview zoom");
+            scaleNote.style.fontSize = 9;
+            scaleNote.style.color = new Color(0.6f, 0.6f, 0.6f);
+            scaleNote.style.marginTop = 2;
+            contentContainer.Add(scaleNote);
             
             // Cache status label
             var statusContainer = new VisualElement();
@@ -427,9 +433,10 @@ namespace RPGGame.Map.Editor
                 }
                 
                 // Create PreviewCache module and generate cache
+                // Use the same scale as the preview (10.0) so cached data matches preview sampling
                 var cacheModule = new LibNoise.Operator.PreviewCache(inputModule);
                 cacheModule.CacheSize = 128; // Match preview size
-                cacheModule.CacheScale = node.cacheScale;
+                cacheModule.CacheScale = 10.0; // Match preview scale for consistency
                 cacheModule.GenerateCache();
                 
                 // Extract cached values from the module and store in the node
@@ -444,6 +451,12 @@ namespace RPGGame.Map.Editor
                 node.SetCachedValues(cachedValues);
                 
                 currentNode?.NotifyNodeChanged();
+                
+                // Refresh all node previews so nodes that depend on this cache (like curve nodes) update
+                if (graphView != null)
+                {
+                    graphView.RefreshNodePreviews();
+                }
                 
                 // Update status label
                 statusLabel.text = "Status: Cached";
@@ -595,7 +608,8 @@ namespace RPGGame.Map.Editor
             var helpText = new Label("Angle-based slope filtering:\n" +
                 "• Min/Max Angle: Filter slopes by angle range (0° = flat, 90° = vertical)\n" +
                 "• Smooth Range: Blending range at boundaries\n" +
-                "• Terrain Height: Height scale for angle calculation");
+                "• Terrain Height: Actual terrain height in world units (Y component of tileSize, default: 20).\n" +
+                "  This should match your terrain's height scale, NOT a multiplier.");
             helpText.style.fontSize = 9;
             helpText.style.color = new Color(0.6f, 0.6f, 0.6f);
             helpText.style.marginTop = 5;

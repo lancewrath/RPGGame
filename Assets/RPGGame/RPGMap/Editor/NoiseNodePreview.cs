@@ -30,7 +30,12 @@ namespace RPGGame.Map.Editor
             float[,] values = new float[PreviewSize, PreviewSize];
             
             // Sample noise values
-            double scale = 0.1; // Scale factor for preview
+            // Use a larger scale to zoom out and show more of the pattern
+            // This is especially important for low-frequency noise (e.g., 0.0005)
+            // With scale 10.0, a 128x128 preview covers ~1280 units
+            // For frequency 0.0005 (cycle length = 2000 units), this shows ~0.64 cycles
+            // For even lower frequencies, you may want to increase this further
+            double scale = 10.0; // Scale factor for preview (increased from 0.1 to zoom out more)
             for (int y = 0; y < PreviewSize; y++)
             {
                 for (int x = 0; x < PreviewSize; x++)
@@ -147,12 +152,13 @@ namespace RPGGame.Map.Editor
                     if (cacheNode != null)
                     {
                         // If cache is available, create a module that uses cached values
+                        // Use scale 10.0 to match preview scale (cache is generated with this scale)
                         if (cacheNode.isCached)
                         {
                             var cachedValues = cacheNode.GetCachedValues();
                             if (cachedValues != null)
                             {
-                                return new CachedValueModule(cachedValues, cacheNode.cacheScale);
+                                return new CachedValueModule(cachedValues, 10.0); // Match preview scale
                             }
                         }
                         
@@ -423,6 +429,24 @@ namespace RPGGame.Map.Editor
                         return new LibNoise.Operator.Normalize(inputModule);
                     }
                     break;
+                case "Erosion":
+                    var erosionNode = node as ErosionNode;
+                    if (erosionNode != null)
+                    {
+                        ModuleBase inputModule = GetInputModule(node, graphView, visitedNodes, 0);
+                        if (inputModule == null)
+                        {
+                            var perlin = new LibNoise.Generator.Perlin();
+                            perlin.Frequency = 1.0;
+                            inputModule = perlin;
+                        }
+                        var erosion = new LibNoise.Operator.Erosion(inputModule);
+                        erosion.Intensity = erosionNode.intensity;
+                        erosion.Iterations = erosionNode.iterations;
+                        erosion.SampleDistance = erosionNode.sampleDistance;
+                        return erosion;
+                    }
+                    break;
                 case "Beach":
                     var beachNode = node as BeachNode;
                     if (beachNode != null)
@@ -559,11 +583,43 @@ namespace RPGGame.Map.Editor
             if (cachedValues == null)
                 return 0.0;
             
-            // Convert world coordinates to cache indices
-            int cacheX = Mathf.Clamp((int)(x / cacheScale), 0, CacheSize - 1);
-            int cacheZ = Mathf.Clamp((int)(z / cacheScale), 0, CacheSize - 1);
+            // Convert world coordinates to cache indices using interpolation
+            double cacheCoordX = x / cacheScale;
+            double cacheCoordZ = z / cacheScale;
             
-            return cachedValues[cacheX, cacheZ];
+            // Clamp to valid range
+            cacheCoordX = System.Math.Max(0, System.Math.Min(CacheSize - 1, cacheCoordX));
+            cacheCoordZ = System.Math.Max(0, System.Math.Min(CacheSize - 1, cacheCoordZ));
+            
+            // Get the four surrounding cache points for bilinear interpolation
+            int x0 = (int)System.Math.Floor(cacheCoordX);
+            int z0 = (int)System.Math.Floor(cacheCoordZ);
+            int x1 = System.Math.Min(x0 + 1, CacheSize - 1);
+            int z1 = System.Math.Min(z0 + 1, CacheSize - 1);
+            
+            // Ensure indices are within bounds
+            x0 = System.Math.Max(0, System.Math.Min(CacheSize - 1, x0));
+            z0 = System.Math.Max(0, System.Math.Min(CacheSize - 1, z0));
+            
+            // Get the four corner values
+            double v00 = cachedValues[x0, z0]; // Bottom-left
+            double v10 = cachedValues[x1, z0]; // Bottom-right
+            double v01 = cachedValues[x0, z1]; // Top-left
+            double v11 = cachedValues[x1, z1]; // Top-right
+            
+            // Calculate fractional parts for interpolation
+            double fx = cacheCoordX - x0;
+            double fz = cacheCoordZ - z0;
+            
+            // Bilinear interpolation
+            // First interpolate along X axis
+            double v0 = v00 * (1 - fx) + v10 * fx; // Bottom edge
+            double v1 = v01 * (1 - fx) + v11 * fx; // Top edge
+            
+            // Then interpolate along Z axis
+            double result = v0 * (1 - fz) + v1 * fz;
+            
+            return result;
         }
     }
 }
